@@ -14,9 +14,6 @@
 #include "webpage_routes.h"
 
 
-
-
-
 const char* ssid = "eero_JELP";
 const char* password = "slimjim314";
 
@@ -41,7 +38,8 @@ const int output_pin = 23;
 unsigned long last_update_time = 0;
 int seconds_since_last_save = 0;
 const int save_interval_seconds = 60; // Set to 10 or 60 depending on preference
-
+unsigned long lastTxTime = 0;
+const unsigned long txInterval = 2000; // Broadcast telemetry every 2000ms (2 seconds)
 
 // Explicitly define the standard DevKit I2C pins
 #define I2C_SDA 4
@@ -61,13 +59,13 @@ Adafruit_SSD1306 ssd1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_MCP9808 mcp9808 = Adafruit_MCP9808();
 
 void setup() {
-  Serial.begin(115200);
-  // while(!Serial) {
-  //  delay(10);
-  // }
-  
-  // Needs some delay to enable initial Serial.printf, 1000 is not enough
-  delay(2000);
+    Serial.begin(115200);
+    // while(!Serial) {
+    //  delay(10);
+    // }
+    
+    // Needs some delay to enable initial Serial.printf, 1000 is not enough
+    delay(2000);
 
     // pinMode(RGB_BUILTIN, OUTPUT);
     rgbLedWrite(RGB_BUILTIN, 8, 4, 0); // Amber
@@ -124,22 +122,88 @@ void setup() {
 
     // Connect to Wi-Fi
     Serial.printf("Connecting to %s ", ssid);
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(F("."));
-    }
-    Serial.printf("\nWi-Fi connected, ip: %s\n", WiFi.localIP().toString().c_str());
+    // WiFi.begin(ssid, password);
+    // while (WiFi.status() != WL_CONNECTED) {
+    //     delay(500);
+    //     Serial.print(F("."));
+    // }
+    // Serial.printf("\nWi-Fi connected, ip: %s\n", WiFi.localIP().toString().c_str());
 
-    // Start mDNS Responder (Must be done AFTER Wi-Fi is connected)
-    if (!MDNS.begin(ESP32_HOSTNAME)) {
-        rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // Red
-        Serial.println(F("Error setting up mDNS!"));
-        while (1) {
-            delay(1000);
-        }
+    // --------------------------------------------------------------------------
+    // 1. Prepare the radio architecture for concurrent Wi-Fi + ESP-NOW
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(); // Clear any stale connections from previous reboots
+
+    // 2. Initialize ESP-NOW while the radio interface is idle
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("[ERROR] Failed to bind ESP-NOW architecture.");
+        return;
     }
-    Serial.printf("mDNS started, hostname: http://%s.local\n", ESP32_HOSTNAME);
+    
+    // Register the data tracking callbacks
+    esp_now_register_send_cb(on_data_sent);
+    esp_now_register_recv_cb(on_data_recv);
+
+    // Set channel to 0 so ESP-NOW automatically follows your router's channel later
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, broadcastMacAddress, 6);
+    peerInfo.channel = WiFi.channel(); 
+    peerInfo.encrypt = false;
+
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("[ERROR] Failed to map universal broadcast peer pairing.");
+        return;
+    }
+    Serial.println("[SUCCESS] ESP-NOW Layer bound to radio framework.");
+
+    // 3. Fire up the physical connection to your eero network matrix
+    WiFi.begin(ssid, password);
+    
+    Serial.print("Synchronizing with eero network matrix");
+    unsigned long startAttempt = millis();
+    
+    // Wait for the router to assign a valid DHCP lease
+    while ((WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) && (millis() - startAttempt < 8000)) {
+        delay(500);
+        Serial.print(".");
+    }
+
+    // 4. Verify routing status and assign browser tab dynamic configurations
+    if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
+        
+        // Match your specific active server target address
+        if (WiFi.localIP() == IPAddress(10, 0, 0, 71)) {
+            amIServerNode = true; 
+            myRuntimeNodeId = 0;
+            myRuntimeHostname = "HZ-SERVER";
+        } else {
+            amIServerNode = false;
+            String macLastFour = WiFi.macAddress().substring(12);
+            macLastFour.replace(":", "");
+            myRuntimeNodeId = -1; 
+            myRuntimeHostname = "HZ-NODE-" + macLastFour;
+        }
+        
+        // Push the hostname attributes directly into the active network layer
+        WiFi.setHostname(myRuntimeHostname.c_str());
+
+        // Initialize the mDNS responder for browser URL discovery
+        if (!MDNS.begin(myRuntimeHostname.c_str())) {
+            rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // Red
+            Serial.println(F("Error setting up mDNS!"));
+            while (1) {
+                delay(1000);
+            }
+        }
+        
+        Serial.printf("\n[SYNC] Node Registered: %s (ID: %d)\n", myRuntimeHostname.c_str(), myRuntimeNodeId);
+        Serial.printf("mDNS Active: http://%s.local\n", myRuntimeHostname.c_str());
+        Serial.print("Network Route: http://");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\n[ERROR] Core network matrix timeout. Check SSID credentials.");
+    }
+    // --------------------------------------------------------------------------
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
         webpage_serve_html(request, LittleFS);
@@ -303,9 +367,25 @@ void loop() {
         }
     }
 
+    // =====================================================================
+    // SUB-NODE TELEMETRY LOOP: Transmits live data every 2 seconds
+    // =====================================================================
+    // Declared static to maintain timestamp history across loop cycles
+    static unsigned long lastTxTime = 0; 
+    if (!amIServerNode && (millis() - lastTxTime >= 2000)) {
+        lastTxTime = millis();
+        // Automatically fetches and broadcasts your active mcp9808 reading
+        broadcast_telemetry(mcp9808.readTempC());
+    }
+
     // Send a non-blocking background update to all clients every 1 second
     if ((millis() - last_time) > 1000) {
         last_time = millis();
+
+        // FIXED: Force the Master Server (Node 00) to populate its own matrix cache line
+        if (amIServerNode) {
+            update_system_matrix(0, mcp9808.readTempC());
+        }
 
         if (getLocalTime(&timeinfo)) {
             snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02d %02d:%02d:%02d",
@@ -328,13 +408,12 @@ void loop() {
                  mcp9808.readTempC());
         events.send(String(output_buffer).c_str(), "log_update", millis());
 
-        
         ssd1306.clearDisplay();
         ssd1306.setCursor(0, 16);
         ssd1306.printf("%.4f", mcp9808.readTempC());
         ssd1306.display();
 
-    // Serial.printf("%s\n", output_buffer);
-    global_counter++;
-  }
+        // Serial.printf("%s\n", output_buffer);
+        global_counter++;
+    }
 }

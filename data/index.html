@@ -45,6 +45,60 @@
       overflow-y: auto;
       white-space: pre-wrap;
     }
+
+  .zone-horizontal-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between; /* Spreads columns evenly within the available page frame */
+    align-items: flex-start;
+    gap: 10px;                     /* Tightened gaps to maximize text width clearance */
+    margin: 25px auto;             /* "auto" perfectly centers the row inside your page width */
+    width: 100%;
+    max-width: 1000px;             /* Change this pixel number to perfectly match your website width */
+    box-sizing: border-box;        /* Forces padding adjustments to stay inside the boundary width */
+    font-family: Arial, sans-serif;
+  }
+
+  .zone-horizontal-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between; /* Spreads columns evenly within the available page frame */
+    align-items: flex-start;
+    gap: 10px;                     /* Tightened gaps to maximize text width clearance */
+    margin: 25px auto;             /* "auto" perfectly centers the row inside your page width */
+    width: 100%;
+    max-width: 1000px;             /* Change this pixel number to perfectly match your website width */
+    box-sizing: border-box;        /* Forces padding adjustments to stay inside the boundary width */
+    font-family: Arial, sans-serif;
+  }
+
+  .zone-matrix-centered-group {
+    display: flex;
+    flex-direction: row;
+    justify-content: center; /* Bundles the columns tightly in the middle of the viewport */
+    align-items: flex-start;
+    gap: 20px;               /* Clean, uniform spacing between each vertical text stack */
+    margin: 15px auto;       /* Tightened margin to center container box inside page width */
+    width: 100%;
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+  }
+  .zone-centered-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;     /* Perfectly centers the text elements inside each column stack */
+      min-width: 95px;         /* Keeps data elements from squishing or wrapping onto two lines */
+  }
+  .zone-centered-label {
+      font-size: 0.95rem; 
+      margin-bottom: 2px;      /* Reduced from 4px to pull text closer */
+  }
+  .zone-centered-temp {
+      font-size: 1rem; 
+      font-family: monospace;
+      margin-bottom: 0px;      /* Dropped to 0px to reclaim dead baseline space */
+  }
+
   </style>
 </head>
 <body>
@@ -80,6 +134,33 @@
       <div id="uploadStatus" class="upload-status"></div>
     </div>
     
+    <!-- Centered Minimalist Multi-Zone Telemetry Row -->
+    <div class="zone-matrix-centered-group">
+        <!-- Node 00 Column (Server) -->
+        <div class="zone-centered-column">
+            <div class="zone-centered-label">00</div>
+            <div class="zone-centered-temp" id="node-temp-0">--.---- °C</div>
+        </div>
+        
+        <!-- Node 01 Column -->
+        <div class="zone-centered-column">
+            <div class="zone-centered-label">01</div>
+            <div class="zone-centered-temp" id="node-temp-1">--.---- °C</div>
+        </div>
+        
+        <!-- Node 02 Column -->
+        <div class="zone-centered-column">
+            <div class="zone-centered-label">02</div>
+            <div class="zone-centered-temp" id="node-temp-2">--.---- °C</div>
+        </div>
+        
+        <!-- Node 03 Column -->
+        <div class="zone-centered-column">
+            <div class="zone-centered-label">03</div>
+            <div class="zone-centered-temp" id="node-temp-3">--.---- °C</div>
+        </div>
+    </div>
+        
     <!-- NEW Separate Scrollable Log block -->
     <div style="margin-left: 0px; margin-right: 0px; margin-top: 5px; padding-top: 0px;" class="terminal-box">
       <div id="liveScrollLog" class="scroll-output-box">Waiting for system logs...</div>
@@ -226,6 +307,34 @@
       document.getElementById('fileInput').files = dt.files;
       uploadSDFile();
     });
+  
+    // Automatically update the multi-zone telemetry dashboard every second
+    setInterval(async () => {
+        try {
+            const queryResponse = await fetch('/api/system_temp');
+            if (!queryResponse.ok) {
+                throw new Error(`HTTP error! status: ${queryResponse.status}`);
+            }
+            
+            const telemetryMatrix = await queryResponse.json();
+            
+            telemetryMatrix.forEach(node => {
+                const tempDisplay = document.getElementById(`node-temp-${node.node_id}`);
+                
+                if (tempDisplay) {
+                    // If it is Node 00 (Server) OR marked online, display the live data
+                    if (String(node.node_id) === "0" || node.online === true || node.online === "true") {
+                        tempDisplay.innerHTML = `${Number(node.temperature).toFixed(4)} °C`;
+                    } else {
+                        // Having no temperature implicitly signifies the node is INITIALIZING / OFFLINE
+                        tempDisplay.innerHTML = "INITIALIZING...";
+                    }
+                }
+            });
+        } catch (networkError) {
+            console.error("Dashboard failed to fetch system temperatures:", networkError);
+        }
+    }, 1000);
   </script>
 </body>
 </html>

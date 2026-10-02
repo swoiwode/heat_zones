@@ -9,11 +9,224 @@
 //         Serial.println("[ERROR] Failed to open telemetry log file.");
 //     }
 //  }
-
 #include "webpage_routes.h"
+#include "esp_wifi.h"
 
 int global_counter = 0;
 const char* counter_file_path = "/counter.dat";
+const char* counter_file = "/counter.dat"; 
+static File uploadFile;
+
+// =========================================================================
+// CHUNK 1: Core System Architecture & Radio Matrix Storage (FIXED DYNAMIC MACRO)
+// =========================================================================
+uint8_t broadcastMacAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+// Automatically calculate identities right at boot based on PlatformIO environment flags
+bool amIServerNode = (atoi(NODE_NUMBER) == 0);
+int myRuntimeNodeId = atoi(NODE_NUMBER);
+String myRuntimeHostname = (atoi(NODE_NUMBER) == 0) ? "HZ-SERVER" : "HZ-NODE-" + String(NODE_NUMBER);
+
+NodeData systemMatrix[MAX_SYSTEM_NODES];
+RegistrationEntry clientRegistry[MAX_SYSTEM_NODES];
+
+void init_resilient_esp_now() {
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != ESP_OK) {
+      Serial.println("[ERROR] Failed to bind ESP-NOW architecture.");
+      return;
+  }
+
+  esp_now_register_send_cb(on_data_sent);
+  esp_now_register_recv_cb(on_data_recv);
+
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
+  // =========================================================================
+  // UNIFIED COMPILE-TIME PARSER: Hard-lock integer assignments via C standard
+  // =========================================================================
+  // atoi directly extracts the numbers from the unquoted platform literal tokens
+  myRuntimeNodeId = atoi(NODE_NUMBER); 
+  myRuntimeHostname = "HZ-NODE-" + String(myRuntimeNodeId);
+  // =========================================================================
+
+  // 2. UNIFIED IDENTITY ASSIGNMENT: Evaluate role based on clean integer indices
+  if (myRuntimeNodeId == 0) {
+      amIServerNode = true;
+      myRuntimeHostname = "HZ-SERVER";
+      
+      // Open the server's firewall layer to listen to ALL sub-node unicast frames cleanly
+      esp_now_peer_info_t peerInfo = {};
+      memset(&peerInfo, 0, sizeof(peerInfo));
+      memset(peerInfo.peer_addr, 0, 6); // Wildcard address opens listener pipelines
+      peerInfo.channel = WiFi.channel();
+      peerInfo.encrypt = false;
+
+      if (!esp_now_is_peer_exist(peerInfo.peer_addr)) {
+          esp_now_add_peer(&peerInfo);
+      }
+      Serial.println("[INIT] Codebase booted as MASTER SERVER. Open listener mapped.");
+  } 
+  else {
+      amIServerNode = false;
+      
+      // Sub-nodes explicitly pair with Node 00's fixed broadcast target signature
+      esp_now_peer_info_t peerInfo = {};
+      memset(&peerInfo, 0, sizeof(peerInfo));
+      memcpy(peerInfo.peer_addr, broadcastMacAddress, 6);
+      peerInfo.channel = WiFi.channel();
+      peerInfo.encrypt = false;
+
+      if (!esp_now_is_peer_exist(peerInfo.peer_addr)) {
+          esp_now_add_peer(&peerInfo);
+      }
+      Serial.printf("[INIT] Codebase booted as SUB-NODE %02d. Senders layer mapped.\n", myRuntimeNodeId);
+  }
+
+  WiFi.setHostname(myRuntimeHostname.c_str());
+}
+
+void update_system_matrix(uint8_t nodeId, float temp) {
+  if (nodeId < MAX_SYSTEM_NODES) {
+      systemMatrix[nodeId].temperature = temp;
+      systemMatrix[nodeId].lastSeenMillis = millis();
+      systemMatrix[nodeId].isOnline = true; // Hard-lock the cache line active
+  }
+}
+
+void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+    if (status != ESP_NOW_SEND_SUCCESS) {
+        Serial.println("[ESP-NOW] Broadcast telemetry failed to clear radio.");
+    }
+}
+
+void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingData, int len) {
+  TelemetryPacket packet;
+  if (len == sizeof(packet)) {
+      memcpy(&packet, incomingData, sizeof(packet));
+
+      // -----------------------------------------------------------------
+      // SERVER MODE: Manage Dynamic Registration & Data Matrix Mapping
+      // -----------------------------------------------------------------
+      if (amIServerNode) {
+          // Process registrations FIRST based strictly on packet type, bypassing slot index checks
+          if (packet.packetType == PACKET_REGISTRATION_REQ) {
+              int assignedId = -1;
+
+              // Step A: Check if this transmitter MAC address is already in our table
+              for (int i = 1; i < MAX_SYSTEM_NODES; i++) {
+                  if (clientRegistry[i].isActive && memcmp(clientRegistry[i].mac, recv_info->src_addr, 6) == 0) {
+                      assignedId = i;
+                      break;
+                  }
+              }
+
+              // Step B: If it's a newly discovered chip, deal out the next available slot
+              if (assignedId == -1) {
+                  for (int i = 1; i < MAX_SYSTEM_NODES; i++) {
+                      if (!clientRegistry[i].isActive) {
+                          memcpy(clientRegistry[i].mac, recv_info->src_addr, 6);
+                          clientRegistry[i].isActive = true;
+                          assignedId = i;
+                          break;
+                      }
+                  }
+              }
+
+              // Step C: Send the direct confirmation packet back out to the sender's MAC
+              if (assignedId != -1) {
+                  TelemetryPacket ackPacket;
+                  ackPacket.packetType = PACKET_REGISTRATION_ACK;
+                  ackPacket.dynamicNodeId = assignedId;
+                  ackPacket.temperature = 0.0f;
+                  memcpy(ackPacket.macAddr, recv_info->src_addr, 6);
+                  ackPacket.timestamp = millis();
+
+                  esp_now_send(recv_info->src_addr, (uint8_t *)&ackPacket, sizeof(ackPacket));
+                  Serial.printf("[SERVER] Dynamic handshaking complete -> Assigned Slot %02d\n", assignedId);
+              }
+              return; // Safely exit early from the registration transaction frame
+          }
+          
+          // Handle regular temperature transmission packets
+          if (packet.packetType == PACKET_TELEMETRY && packet.dynamicNodeId < MAX_SYSTEM_NODES) {
+              update_system_matrix(packet.dynamicNodeId, packet.temperature);
+              Serial.printf("[SERVER] Intercepted payload from Node %02d -> Temp: %.4f C\n", 
+                            packet.dynamicNodeId, packet.temperature);
+          }
+      }
+      // -----------------------------------------------------------------
+      // TRANSMITTER MODE: Process Assignment Confirmations
+      // -----------------------------------------------------------------
+      else {
+          if (packet.packetType == PACKET_REGISTRATION_ACK) {
+              uint8_t myMac[6];
+              esp_read_mac(myMac, ESP_MAC_WIFI_STA);
+              
+              // Confirm the incoming server message was targeted to our exact hardware signature
+              if (memcmp(packet.macAddr, myMac, 6) == 0) {
+                  myRuntimeNodeId = packet.dynamicNodeId;
+                  myRuntimeHostname = "HZ-NODE-0" + String(myRuntimeNodeId);
+                  
+                  WiFi.setHostname(myRuntimeHostname.c_str());
+                  Serial.printf("[TX-SYNC] Handshake locked! Claiming dynamic profile: %s\n", 
+                                myRuntimeHostname.c_str());
+              }
+          }
+      }
+  }
+}
+
+// =========================================================================
+// UNIFIED ARCHITECTURE: Hardlocked Telemetry Broadcaster
+// =========================================================================
+void broadcast_telemetry(float currentTemperature) {
+    // Extract the raw compile-time integer value directly inside the function scope
+    int compileTimeId = atoi(NODE_NUMBER);
+
+    // Master Server (Node 00) never needs to transmit radio telemetry packets to itself
+    if (compileTimeId == 0) {
+        return; 
+    }
+
+    // THROTTLE LAYER: Restrict transmitter bursts to a clean 1-second interval
+    static unsigned long lastBroadcastMillis = 0;
+    if (millis() - lastBroadcastMillis < 1000) {
+        return; 
+    }
+    lastBroadcastMillis = millis();
+
+    TelemetryPacket packet;
+    
+    // Explicitly target your broadcast/unicast pipeline layout
+    esp_now_peer_info_t peerInfo;
+    if (esp_now_get_peer(broadcastMacAddress, &peerInfo) == ESP_OK) {
+        if (peerInfo.channel != WiFi.channel()) {
+            peerInfo.channel = WiFi.channel();
+            esp_now_mod_peer(&peerInfo);
+        }
+    }
+
+    // Pack the structure using the hardlocked compile-time ID token
+    packet.packetType = PACKET_TELEMETRY;
+    packet.dynamicNodeId = compileTimeId; // Hardlocked directly to your platformio.ini flag!
+    packet.temperature = currentTemperature;
+    packet.timestamp = millis();
+
+    esp_err_t result = esp_now_send(broadcastMacAddress, (uint8_t *)&packet, sizeof(packet));
+    
+    if (result == ESP_OK) {
+        Serial.printf("[TX] Node %02d sent Temp: %.4f C on Channel %d\n", 
+                      compileTimeId, currentTemperature, WiFi.channel());
+    } else {
+        Serial.println("[ERROR] Failed to push telemetry packet to ESP-NOW radio queue.");
+    }
+}
+
+void say_hello(void) {
+  Serial.printf("Hello, World!\n");
+}
 
 void load_global_counter() {
   if (!LittleFS.exists(counter_file_path)) {
@@ -54,10 +267,71 @@ void save_global_counter() {
   file.close();
 }
 
-// File handle for the incoming upload stream
-static File uploadFile;
-
 void init_webpage_routes(AsyncWebServer &server, fs::FS &sd_instance, fs::FS &fs_instance) {
+  // =========================================================================
+  // CHUNK 2: Live Multi-Zone Matrix JSON API Endpoint
+  // =========================================================================
+  // server.on("/api/system_temp", HTTP_GET, [](AsyncWebServerRequest *request) {
+  //     String jsonOutput = "[\n";
+  //     unsigned long currentMillis = millis();
+
+  //     for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
+  //         // Flag a background transmitter offline if it misses its 10-second check-in
+  //         if (i != myRuntimeNodeId && systemMatrix[i].isOnline && (currentMillis - systemMatrix[i].lastSeenMillis > 10000)) {
+  //             systemMatrix[i].isOnline = false;
+  //         }
+
+  //         jsonOutput += "    {\n";
+  //         jsonOutput += "        \"node_id\": " + String(i) + ",\n";
+  //         jsonOutput += "        \"temperature\": " + String(systemMatrix[i].temperature, 4) + ",\n";
+  //         jsonOutput += "        \"online\": " + String(systemMatrix[i].isOnline ? "true" : "false") + "\n";
+  //         jsonOutput += "    }";
+          
+  //         if (i < MAX_SYSTEM_NODES - 1) {
+  //             jsonOutput += ",\n";
+  //         } else {
+  //             jsonOutput += "\n";
+  //         }
+  //     }
+  //     jsonOutput += "]";
+      
+  //     request->send(200, "application/json", jsonOutput);
+  // });
+
+  // =========================================================================
+  // Live Multi-Zone Matrix JSON API Endpoint (Forced Local Server Route)
+  // =========================================================================
+  server.on("/api/system_temp", HTTP_GET, [](AsyncWebServerRequest *request) {
+      String jsonOutput = "[\n";
+      unsigned long currentMillis = millis();
+
+      for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
+          // Force the active server node (Slot 0) to ALWAYS stay flagged online
+          if (i == 0 && amIServerNode) {
+              systemMatrix[i].isOnline = true;
+          } 
+          // External sub-nodes: Flag offline if they haven't checked in for 10 seconds
+          else if (i != myRuntimeNodeId && systemMatrix[i].isOnline && (currentMillis - systemMatrix[i].lastSeenMillis > 10000)) {
+              systemMatrix[i].isOnline = false;
+          }
+
+          jsonOutput += "    {\n";
+          jsonOutput += "        \"node_id\": " + String(i) + ",\n";
+          jsonOutput += "        \"temperature\": " + String(systemMatrix[i].temperature, 4) + ",\n";
+          jsonOutput += "        \"online\": " + String(systemMatrix[i].isOnline ? "true" : "false") + "\n";
+          jsonOutput += "    }";
+          
+          if (i < MAX_SYSTEM_NODES - 1) {
+              jsonOutput += ",\n";
+          } else {
+              jsonOutput += "\n";
+          }
+      }
+      jsonOutput += "]";
+      
+      request->send(200, "application/json", jsonOutput);
+  });
+
   // Local structure definition to encapsulate request tracking state cleanly
   struct UploadState {
     File file;
@@ -230,10 +504,6 @@ void handle_sd_files(AsyncWebServerRequest *request) {
   request->send(response);
 }
 
-void say_hello(void) {
-    Serial.printf("Hello, World!\n");
-}
-
 void mcu_dir(fs::FS &fs, const char * dir_name, uint8_t levels) {
   Serial.printf("Files in: %s\n", dir_name);
 
@@ -269,7 +539,7 @@ void webpage_serve_html(AsyncWebServerRequest *request, fs::LittleFSFS &local_fi
     String htmlContent = file.readString();
     file.close();
 
-    htmlContent.replace("%BOARD_HOSTNAME%", ESP32_HOSTNAME);
+    htmlContent.replace("%BOARD_HOSTNAME%", myRuntimeHostname.c_str());
     request->send(200, "text/html", htmlContent);
 }
 
