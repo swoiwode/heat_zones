@@ -23,9 +23,32 @@ int myRuntimeNodeId = atoi(NODE_NUMBER);
 String myRuntimeHostname = (atoi(NODE_NUMBER) == 0) ? "HZ-SERVER" : "HZ-NODE-" + String(NODE_NUMBER);
 NodeData systemMatrix[MAX_SYSTEM_NODES];
 RegistrationEntry clientRegistry[MAX_SYSTEM_NODES];
+NodeStats statisticalMatrix[MAX_SYSTEM_NODES];
+
 
 void say_hello(void) {
   Serial.printf("Hello, World!\n");
+}
+
+void handle_api_system_temp(AsyncWebServerRequest *request) {
+  String jsonPayload = "[";
+  
+  // REFACTORED: Loop through all 16 potential nodes (0 to 15)
+  for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
+      jsonPayload += "{";
+      jsonPayload += "\"node_id\":" + String(i) + ",";
+      jsonPayload += "\"temperature\":" + String(systemMatrix[i].temperature, 4) + ",";
+      jsonPayload += "\"online\":" + String(systemMatrix[i].isOnline ? "true" : "false") + ",";
+      jsonPayload += "\"last_seen\":" + String(systemMatrix[i].lastSeenMillis);
+      jsonPayload += "}";
+      
+      if (i < MAX_SYSTEM_NODES - 1) {
+          jsonPayload += ",";
+      }
+  }
+  
+  jsonPayload += "]";
+  request->send(200, "application/json", jsonPayload);
 }
 
 void init_resilient_esp_now() {
@@ -100,8 +123,23 @@ void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
 }
 
 void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingData, int len) {
-  TelemetryPacket packet;
-  if (len == sizeof(packet)) {
+    
+    // --- Extract the incoming MAC address pointer from the modern struct ---
+    const uint8_t *incomingMac = recv_info->src_addr; 
+    // -----------------------------------------------------------------------
+
+    int registeredIndex = -1;
+
+    // Sweeps all 16 slots inside webpage_routes.cpp to look for the sender
+    for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
+        if (memcmp(clientRegistry[i].mac, incomingMac, 6) == 0) {
+            registeredIndex = i;
+            break;
+        }
+    }
+
+    TelemetryPacket packet;
+    if (len == sizeof(packet)) {
       memcpy(&packet, incomingData, sizeof(packet));
 
       // -----------------------------------------------------------------
@@ -150,8 +188,8 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingD
           // Handle regular temperature transmission packets
           if (packet.packetType == PACKET_TELEMETRY && packet.dynamicNodeId < MAX_SYSTEM_NODES) {
               update_system_matrix(packet.dynamicNodeId, packet.temperature);
-              Serial.printf("[SERVER] Intercepted payload from Node %02d -> Temp: %.4f C\n", 
-                            packet.dynamicNodeId, packet.temperature);
+              // Serial.printf("[SERVER] Intercepted payload from Node %02d -> Temp: %.4f C\n", 
+              //               packet.dynamicNodeId, packet.temperature);
           }
       }
       // -----------------------------------------------------------------

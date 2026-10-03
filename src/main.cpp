@@ -13,7 +13,6 @@
 
 #include "webpage_routes.h"
 
-
 const char* ssid = "eero_JELP";
 const char* password = "slimjim314";
 
@@ -40,6 +39,10 @@ int seconds_since_last_save = 0;
 const int save_interval_seconds = 60; // Set to 10 or 60 depending on preference
 unsigned long lastTxTime = 0;
 const unsigned long txInterval = 2000; // Broadcast telemetry every 2000ms (2 seconds)
+
+// Pull the statistical storage matrix allocated in your routes source file
+extern NodeStats statisticalMatrix[MAX_SYSTEM_NODES];
+// ----------------------------------------------------------
 
 // Explicitly define the standard DevKit I2C pins
 #define I2C_SDA 4
@@ -176,7 +179,6 @@ void setup() {
 
     // 4. Verify routing status and assign browser tab dynamic configurations
     if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
-        
         // Match your specific active server target address
         if (WiFi.localIP() == IPAddress(10, 0, 0, 71)) {
             amIServerNode = true; 
@@ -376,7 +378,6 @@ void loop() {
     // =====================================================================
     // SUB-NODE TELEMETRY LOOP: Transmits live data every 2 seconds
     // =====================================================================
-    // Declared static to maintain timestamp history across loop cycles
     static unsigned long lastTxTime = 0; 
     if (!amIServerNode && (millis() - lastTxTime >= 2000)) {
         lastTxTime = millis();
@@ -390,7 +391,17 @@ void loop() {
 
         // FIXED: Force the Master Server (Node 00) to populate its own matrix cache line
         if (amIServerNode) {
-            update_system_matrix(0, mcp9808.readTempC());
+            float localTemp = mcp9808.readTempC();
+            update_system_matrix(0, localTemp);
+
+            // --- ACCUMULATE SERVER LOCAL METRICS INTO HOURLY STATS ---
+            NodeStats &serverStats = statisticalMatrix[0];
+            serverStats.sampleCount++;
+            float delta = localTemp - serverStats.rollingMean;
+            serverStats.rollingMean += delta / serverStats.sampleCount;
+            float delta2 = localTemp - serverStats.rollingMean;
+            serverStats.accumulatedM2 += delta * delta2;
+            // ---------------------------------------------------------
         }
 
         if (getLocalTime(&timeinfo)) {
@@ -409,6 +420,7 @@ void loop() {
                  ((double)(SD.totalBytes() - SD.usedBytes()) / 1e9));
         events.send(String(output_buffer).c_str(), "output_update", millis());
 
+        // OLED Display Logic (Maintained exactly as requested)
         ssd1306.clearDisplay();
         ssd1306.setCursor(0, 16);
         ssd1306.printf("%.4f", mcp9808.readTempC());
@@ -416,5 +428,48 @@ void loop() {
 
         // Serial.printf("%s\n", output_buffer);
         global_counter++;
+
+        // =========================================================================
+        // HOURLY STATISTICAL TIMING LOOP INTEGRATION (3,600 Seconds)
+        // =========================================================================
+        if (amIServerNode) {
+            static unsigned long lastHourlyFlushTime = 0;
+            const unsigned long HOURLY_INTERVAL = 3600000UL;
+
+            if (millis() - lastHourlyFlushTime >= HOURLY_INTERVAL) {
+                lastHourlyFlushTime = millis();
+                
+                Serial.println("\n=================================================================");
+                Serial.println("[STATS LOG] 3600-Second Interval Hit -> Executing Crunch Routine");
+                Serial.println("Timestamp Marker, Node ID, Sample Count, Avg Temp (C), Std Dev (C)");
+                Serial.println("=================================================================");
+
+                for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
+                    NodeStats &stats = statisticalMatrix[i];
+                    
+                    if (stats.sampleCount > 0) {
+                        float calculatedAverage = stats.rollingMean;
+                        float calculatedStdDev = 0.0f;
+                        
+                        if (stats.sampleCount > 1) {
+                            float variance = stats.accumulatedM2 / (stats.sampleCount - 1);
+                            calculatedStdDev = sqrt(variance);
+                        }
+                        
+                        Serial.printf("[HOURLY-METRICS], NODE_%02d, %lu, %.4f, %.4f\n", 
+                                      i, stats.sampleCount, calculatedAverage, calculatedStdDev);
+                    } else {
+                        Serial.printf("[HOURLY-METRICS], NODE_%02d, 0, --.----, --.----\n", i);
+                    }
+                    
+                    // Reset running variables back to zero for the next clean hour block
+                    stats.sampleCount = 0;
+                    stats.rollingMean = 0.0f;
+                    stats.accumulatedM2 = 0.0f;
+                }
+                Serial.println("=================================================================\n");
+            }
+        }
+        // =========================================================================
     }
 }
