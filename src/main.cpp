@@ -23,7 +23,7 @@ AsyncWebServer server(80);
 AsyncEventSource events("/events");
 unsigned long last_time = 0;
 
-char output_buffer[256] = "Hello, World!"; // Buffer for incoming data
+char output_buffer[128] = "Hello, World!"; // Buffer for incoming data
 // Global variables for thread communication
 volatile bool new_value_available = false;
 String shared_input_message = "";
@@ -394,25 +394,20 @@ void loop() {
         }
 
         if (getLocalTime(&timeinfo)) {
-            snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02d %02d:%02d:%02d",
-                     timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-                     timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+            snprintf(timestamp, sizeof(timestamp), "%02d:%02d:%02d %04d-%02d-%02d",
+                     timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+                     timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday);
         } else {
             snprintf(timestamp, sizeof(timestamp), "[UNSYNCED]");
         }
 
         snprintf(output_buffer, sizeof(output_buffer),
-                 "%s, 0x%s, SD: %.2f GB",
+                 "%.4f°C %s 0x%s %.2f GB",
+                 mcp9808.readTempC(),
                  timestamp,
                  get_unique_id().c_str(),
                  ((double)(SD.totalBytes() - SD.usedBytes()) / 1e9));
         events.send(String(output_buffer).c_str(), "output_update", millis());
-
-        snprintf(output_buffer, sizeof(output_buffer),
-                 "%s \t\t%.4f °C",
-                 format_with_commas(global_counter).c_str(),
-                 mcp9808.readTempC());
-        events.send(String(output_buffer).c_str(), "log_update", millis());
 
         ssd1306.clearDisplay();
         ssd1306.setCursor(0, 16);
