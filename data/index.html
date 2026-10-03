@@ -95,15 +95,20 @@
         font-size: 0.95rem;
         margin-bottom: 2px;      /* Reduced from 4px to pull text closer */
     }
-    .zone-centered-temp {
-        font-size: 1rem;
-        /* font-family: monospace; */
-        margin-bottom: 0px;      /* Dropped to 0px to reclaim dead baseline space */
-    }
+
     .zone-card-box {
-        display: flex;       /* Forces items into a row */
-        align-items: center; /* Vertically centers the text items */
-        gap: 10px;           /* Adds a neat gap between the number and temperature */
+        display: flex;          /* Forces items into a row */
+        align-items: center;    /* Vertically centers the text items */
+        gap: 10px;              /* Adds a neat gap between the number and temperature */
+        
+        /* MOVED HERE: Applies to both the zone number and the temperature */
+        font-size: 1rem;
+        font-family: monospace;
+    }
+    
+    .zone-centered-temp {
+        margin-bottom: 0px;     /* Keeps baseline space reclaimed */
+        white-space: nowrap;    /* Prevents the °C from wrapping if columns squeeze */
     }
   </style>
 </head>
@@ -149,97 +154,97 @@
         <!-- Zone 00 (Server) -->
         <div class="zone-card-box">
           <div class="zone-card-header">00</div>
-          <div id="node-temp-0" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-0" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 01 -->
         <div class="zone-card-box">
           <div class="zone-card-header">01</div>
-          <div id="node-temp-1" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-1" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 02 -->
         <div class="zone-card-box">
           <div class="zone-card-header">02</div>
-          <div id="node-temp-2" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-2" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 03 -->
         <div class="zone-card-box">
           <div class="zone-card-header">03</div>
-          <div id="node-temp-3" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-3" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 04 -->
         <div class="zone-card-box">
           <div class="zone-card-header">04</div>
-          <div id="node-temp-4" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-4" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 05 -->
         <div class="zone-card-box">
           <div class="zone-card-header">05</div>
-          <div id="node-temp-5" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-5" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 06 -->
         <div class="zone-card-box">
           <div class="zone-card-header">06</div>
-          <div id="node-temp-6" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-6" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 07 -->
         <div class="zone-card-box">
           <div class="zone-card-header">07</div>
-          <div id="node-temp-7" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-7" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 08 -->
         <div class="zone-card-box">
           <div class="zone-card-header">08</div>
-          <div id="node-temp-8" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-8" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 09 -->
         <div class="zone-card-box">
           <div class="zone-card-header">09</div>
-          <div id="node-temp-9" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-9" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 10 -->
         <div class="zone-card-box">
           <div class="zone-card-header">10</div>
-          <div id="node-temp-10" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-10" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 11 -->
         <div class="zone-card-box">
           <div class="zone-card-header">11</div>
-          <div id="node-temp-11" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-11" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 12 -->
         <div class="zone-card-box">
           <div class="zone-card-header">12</div>
-          <div id="node-temp-12" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-12" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 13 -->
         <div class="zone-card-box">
           <div class="zone-card-header">13</div>
-          <div id="node-temp-13" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-13" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 14 -->
         <div class="zone-card-box">
           <div class="zone-card-header">14</div>
-          <div id="node-temp-14" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-14" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- Zone 15 -->
         <div class="zone-card-box">
           <div class="zone-card-header">15</div>
-          <div id="node-temp-15" class="zone-centered-temp">--.---- °C</div>
+          <div id="node-temp-15" class="zone-centered-temp">--.-- °C</div>
         </div>
     
         <!-- 
@@ -374,10 +379,10 @@
               if (tempDisplay) {
                   // If it is Node 00 (Server) OR marked online, display the live data
                   if (String(node.node_id) === "0" || node.online === true || node.online === "true") {
-                      tempDisplay.innerHTML = `${Number(node.temperature).toFixed(4)} °C`;
+                      tempDisplay.innerHTML = `${Number(node.temperature).toFixed(2)} °C`;
               } else {
                 // FIXED: Sub-nodes will now cleanly show the dash placeholder instead of text
-                tempDisplay.innerHTML = "--.---- °C";                    }
+                tempDisplay.innerHTML = "--.-- °C";                 }
               }
           });
       } catch (networkError) {
