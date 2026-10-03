@@ -325,10 +325,9 @@
                     // If it is Node 00 (Server) OR marked online, display the live data
                     if (String(node.node_id) === "0" || node.online === true || node.online === "true") {
                         tempDisplay.innerHTML = `${Number(node.temperature).toFixed(4)} °C`;
-                    } else {
-                        // Having no temperature implicitly signifies the node is INITIALIZING / OFFLINE
-                        tempDisplay.innerHTML = "INITIALIZING...";
-                    }
+                } else {
+                  // FIXED: Sub-nodes will now cleanly show the dash placeholder instead of text
+                  tempDisplay.innerHTML = "--.---- °C";                    }
                 }
             });
         } catch (networkError) {

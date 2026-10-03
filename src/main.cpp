@@ -60,9 +60,15 @@ Adafruit_MCP9808 mcp9808 = Adafruit_MCP9808();
 
 void setup() {
     Serial.begin(115200);
-    // while(!Serial) {
-    //  delay(10);
-    // }
+    
+    // FIXED: Non-blocking boot guard allows standalone operation without a terminal open
+    unsigned long serialTimeout = millis();
+    while (!Serial) {
+        if (millis() - serialTimeout > 2000) {
+            break; // Force-exit the lock after 2 seconds if no computer is listening
+        }
+        delay(10); 
+    }
     
     // Needs some delay to enable initial Serial.printf, 1000 is not enough
     delay(2000);

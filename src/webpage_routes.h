@@ -14,9 +14,6 @@
 
 #define MAX_SYSTEM_NODES 4
 
-// =========================================================================
-// CHUNK 1 CORRECTION: Explicit 6-Byte Array Constraints
-// =========================================================================
 enum PacketType {
     PACKET_REGISTRATION_REQ,
     PACKET_REGISTRATION_ACK,
@@ -37,8 +34,6 @@ struct RegistrationEntry {
 };
 
 extern RegistrationEntry clientRegistry[MAX_SYSTEM_NODES];
-
-
 
 // Structure to hold single node metrics in the server memory matrix
 struct NodeData {

@@ -16,19 +16,17 @@ int global_counter = 0;
 const char* counter_file_path = "/counter.dat";
 const char* counter_file = "/counter.dat"; 
 static File uploadFile;
-
-// =========================================================================
-// CHUNK 1: Core System Architecture & Radio Matrix Storage (FIXED DYNAMIC MACRO)
-// =========================================================================
 uint8_t broadcastMacAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
 // Automatically calculate identities right at boot based on PlatformIO environment flags
 bool amIServerNode = (atoi(NODE_NUMBER) == 0);
 int myRuntimeNodeId = atoi(NODE_NUMBER);
 String myRuntimeHostname = (atoi(NODE_NUMBER) == 0) ? "HZ-SERVER" : "HZ-NODE-" + String(NODE_NUMBER);
-
 NodeData systemMatrix[MAX_SYSTEM_NODES];
 RegistrationEntry clientRegistry[MAX_SYSTEM_NODES];
+
+void say_hello(void) {
+  Serial.printf("Hello, World!\n");
+}
 
 void init_resilient_esp_now() {
   WiFi.mode(WIFI_STA);
@@ -178,9 +176,6 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingD
   }
 }
 
-// =========================================================================
-// UNIFIED ARCHITECTURE: Hardlocked Telemetry Broadcaster
-// =========================================================================
 void broadcast_telemetry(float currentTemperature) {
     // Extract the raw compile-time integer value directly inside the function scope
     int compileTimeId = atoi(NODE_NUMBER);
@@ -222,10 +217,6 @@ void broadcast_telemetry(float currentTemperature) {
     } else {
         Serial.println("[ERROR] Failed to push telemetry packet to ESP-NOW radio queue.");
     }
-}
-
-void say_hello(void) {
-  Serial.printf("Hello, World!\n");
 }
 
 void load_global_counter() {
