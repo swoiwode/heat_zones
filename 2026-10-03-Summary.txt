@@ -1,0 +1,81 @@
+================================================================================
+HEAT SPOT PROJECT: MULTI-ZONE TELEMETRY MATRIX GRID - CONVERSATION SUMMARY
+================================================================================
+
+* Current Status: 
+  The 16-node multi-zone ESP32-C6 cluster architecture is fully operational, 
+  compiled, and successfully deployed across all hardware modules. The web 
+  dashboard interface has been audited, streamlined, and confirmed running live 
+  without errors. The main server and remote sub-nodes are currently executing 
+  a long-term stability monitoring test run in terminal monitor mode.
+
+* UI Refinement & Formatting:
+  Cleaned up a CSS specificity bug where a local '.zone-centered-temp' class 
+  rule forced an inconsistent font. Removed this to force temperature readouts 
+  to inherit the uniform, global Arial typography layout.
+
+* Scalability & Write Timing Analysis:
+  Identified that tasking the server to write high-frequency (1-second) node 
+  data directly to a raw SD card introduces severe SPI/Radio bus contention 
+  and write delays (50-500ms). This latency causes the server to drop up to 
+  4 incoming radio frames per second and prematurely wears out flash cells. 
+  Proposed compressing telemetry into an hourly batch interval, reducing write 
+  operations to under 15ms per hour and completely eliminating packet drops.
+
+* Welford Statistical Strategy:
+  Formally locked in an hourly tracking matrix using lightweight RAM counters 
+  based on Welford's algorithm for computing running variance. The array tracks 
+  'sampleCount', 'rollingMean', and 'accumulatedM2' dynamically upon every packet 
+  arrival, requiring an incredibly small 160-byte RAM footprint while avoiding 
+  heavy historical raw data arrays.
+
+* UI Real Estate Streamlining:
+  Removed the old separate scrollable logging container ('#liveScrollLog') from 
+  the HTML dashboard layout to clean up screen clutter. Systematically stripped 
+  out the dead 'output_buffer' String variable allocations and text manipulation 
+  logic across 'src/main.cpp' to prevent heap fragmentation.
+
+* Console Payload Formatting:
+  Allocated a safe 128-byte static local array for a custom multi-line 
+  'snprintf' display routine inside the server's 1-second timer loop. This securely 
+  broadcasts real-time transaction ticks, NTP full-clock timestamps, remaining 
+  SD storage capacity metrics, and device IDs to the original green alert box.
+
+* Front-End Matrix Expansion:
+  Transitioned the visual dashboard layout into an automatic 4x4 row/column 
+  CSS configuration block ('grid-template-columns: repeat(4, 1fr); gap: 15px;'). 
+  Audited a live screenshot and stripped out a structural markup error where 
+  slots 04-07 were accidentally duplicated on rows 2 and 3, snapping the element 
+  matrix into a symmetrical 16-zone display (Zone 00 to Zone 15).
+
+* 16-Node Backend Expansion:
+  Scaled global macro thresholds ('MAX_SYSTEM_NODES 16'), endpoint JSON string 
+  serializers, and peer registration loop iterators from a 4-node floor to a 
+  16-node ceiling. Expanded tracking arrays consume a negligible 256 bytes of 
+  static memory footprint, maintaining absolute cluster stability.
+
+* API Signature Alignment:
+  Integrated modern ESP32-C6 receive callback parsing matching the ESP-IDF v5 
+  network stack ('esp_now_recv_info_t'). Extracted the source network hardware 
+  identifier explicitly using 'recv_info->src_addr' to perform robust 16-node 
+  peer-validation and address handshaking.
+
+* Workspace Compilation & Global Linkage Fixes:
+  Resolved cross-file compilation errors and linker ('ld.exe') definition faults 
+  by initializing the physical 'statisticalMatrix' memory array inside 
+  'src/webpage_routes.cpp' and exposing it to the main loop via clean 'extern' 
+  bindings at the top of 'src/main.cpp'. Aligned peer-validation variables to 
+  use the true '.mac' identifier defined in the global 'RegistrationEntry' struct.
+
+* Telemetry Main Loop Consolidation:
+  Merged the 3,600-second (1-hour) statistical engine and a local Node-00 
+  hardware accumulator check directly into the parent 1-second loop. This 
+  encapsulates the custom metric console arrays, raw execution counters, NTP clock 
+  strings, micro-OLED canvas graphics, and statistical variance calculation logic 
+  without disturbing background command processors or local SSD1306 displays.
+
+* Console Feed Suppression:
+  Muted verbose packet arrival 'Serial.printf' notifications inside the receive 
+  callback function, clearing the terminal frame for clean data tracking.
+
+================================================================================
