@@ -65,17 +65,15 @@ void init_resilient_esp_now() {
   esp_wifi_set_ps(WIFI_PS_NONE);
 
   // =========================================================================
-  // UNIFIED COMPILE-TIME PARSER: Hard-lock integer assignments via C standard
+  // COMPILE-TIME PARSER: Extract dynamic configurations from build flags
   // =========================================================================
-  // atoi directly extracts the numbers from the unquoted platform literal tokens
   myRuntimeNodeId = atoi(NODE_NUMBER); 
-  myRuntimeHostname = "HZ-NODE-" + String(myRuntimeNodeId);
+  myRuntimeHostname = MY_KNOWN_LOCAL_NAME; // Instantly extract build flag string
   // =========================================================================
 
-  // 2. UNIFIED IDENTITY ASSIGNMENT: Evaluate role based on clean integer indices
+  // Evaluate structural cluster role based on clean integer indices
   if (myRuntimeNodeId == 0) {
       amIServerNode = true;
-      myRuntimeHostname = "HZ-SERVER";
       
       // Open the server's firewall layer to listen to ALL sub-node unicast frames cleanly
       esp_now_peer_info_t peerInfo = {};
@@ -87,7 +85,7 @@ void init_resilient_esp_now() {
       if (!esp_now_is_peer_exist(peerInfo.peer_addr)) {
           esp_now_add_peer(&peerInfo);
       }
-      Serial.println("[INIT] Codebase booted as MASTER SERVER. Open listener mapped.");
+      Serial.printf("[INIT] Codebase booted as MASTER SERVER [%s]. Open listener mapped.\n", myRuntimeHostname.c_str());
   } 
   else {
       amIServerNode = false;
@@ -102,11 +100,12 @@ void init_resilient_esp_now() {
       if (!esp_now_is_peer_exist(peerInfo.peer_addr)) {
           esp_now_add_peer(&peerInfo);
       }
-      Serial.printf("[INIT] Codebase booted as SUB-NODE %02d. Senders layer mapped.\n", myRuntimeNodeId);
+      Serial.printf("[INIT] Codebase booted as SUB-NODE %02d [%s]. Senders layer mapped.\n", myRuntimeNodeId, myRuntimeHostname.c_str());
   }
 
   WiFi.setHostname(myRuntimeHostname.c_str());
 }
+
 
 void update_system_matrix(uint8_t nodeId, float temp) {
   if (nodeId < MAX_SYSTEM_NODES) {
@@ -124,94 +123,106 @@ void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
 
 void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingData, int len) {
     
-    // --- Extract the incoming MAC address pointer from the modern struct ---
-    const uint8_t *incomingMac = recv_info->src_addr; 
-    // -----------------------------------------------------------------------
+  // --- Extract the incoming MAC address pointer from the modern struct ---
+  const uint8_t *incomingMac = recv_info->src_addr; 
+  // -----------------------------------------------------------------------
 
-    int registeredIndex = -1;
+  int registeredIndex = -1;
 
-    // Sweeps all 16 slots inside webpage_routes.cpp to look for the sender
-    for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
-        if (memcmp(clientRegistry[i].mac, incomingMac, 6) == 0) {
-            registeredIndex = i;
-            break;
-        }
-    }
-
-    TelemetryPacket packet;
-    if (len == sizeof(packet)) {
-      memcpy(&packet, incomingData, sizeof(packet));
-
-      // -----------------------------------------------------------------
-      // SERVER MODE: Manage Dynamic Registration & Data Matrix Mapping
-      // -----------------------------------------------------------------
-      if (amIServerNode) {
-          // Process registrations FIRST based strictly on packet type, bypassing slot index checks
-          if (packet.packetType == PACKET_REGISTRATION_REQ) {
-              int assignedId = -1;
-
-              // Step A: Check if this transmitter MAC address is already in our table
-              for (int i = 1; i < MAX_SYSTEM_NODES; i++) {
-                  if (clientRegistry[i].isActive && memcmp(clientRegistry[i].mac, recv_info->src_addr, 6) == 0) {
-                      assignedId = i;
-                      break;
-                  }
-              }
-
-              // Step B: If it's a newly discovered chip, deal out the next available slot
-              if (assignedId == -1) {
-                  for (int i = 1; i < MAX_SYSTEM_NODES; i++) {
-                      if (!clientRegistry[i].isActive) {
-                          memcpy(clientRegistry[i].mac, recv_info->src_addr, 6);
-                          clientRegistry[i].isActive = true;
-                          assignedId = i;
-                          break;
-                      }
-                  }
-              }
-
-              // Step C: Send the direct confirmation packet back out to the sender's MAC
-              if (assignedId != -1) {
-                  TelemetryPacket ackPacket;
-                  ackPacket.packetType = PACKET_REGISTRATION_ACK;
-                  ackPacket.dynamicNodeId = assignedId;
-                  ackPacket.temperature = 0.0f;
-                  memcpy(ackPacket.macAddr, recv_info->src_addr, 6);
-                  ackPacket.timestamp = millis();
-
-                  esp_now_send(recv_info->src_addr, (uint8_t *)&ackPacket, sizeof(ackPacket));
-                  Serial.printf("[SERVER] Dynamic handshaking complete -> Assigned Slot %02d\n", assignedId);
-              }
-              return; // Safely exit early from the registration transaction frame
-          }
-          
-          // Handle regular temperature transmission packets
-          if (packet.packetType == PACKET_TELEMETRY && packet.dynamicNodeId < MAX_SYSTEM_NODES) {
-              update_system_matrix(packet.dynamicNodeId, packet.temperature);
-              // Serial.printf("[SERVER] Intercepted payload from Node %02d -> Temp: %.4f C\n", 
-              //               packet.dynamicNodeId, packet.temperature);
-          }
-      }
-      // -----------------------------------------------------------------
-      // TRANSMITTER MODE: Process Assignment Confirmations
-      // -----------------------------------------------------------------
-      else {
-          if (packet.packetType == PACKET_REGISTRATION_ACK) {
-              uint8_t myMac[6];
-              esp_read_mac(myMac, ESP_MAC_WIFI_STA);
-              
-              // Confirm the incoming server message was targeted to our exact hardware signature
-              if (memcmp(packet.macAddr, myMac, 6) == 0) {
-                  myRuntimeNodeId = packet.dynamicNodeId;
-                  myRuntimeHostname = "HZ-NODE-0" + String(myRuntimeNodeId);
-                  
-                  WiFi.setHostname(myRuntimeHostname.c_str());
-                  Serial.printf("[TX-SYNC] Handshake locked! Claiming dynamic profile: %s\n", 
-                                myRuntimeHostname.c_str());
-              }
-          }
+  // Sweeps all 16 slots inside webpage_routes.cpp to look for the sender
+  for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
+      if (memcmp(clientRegistry[i].mac, incomingMac, 6) == 0) {
+          registeredIndex = i;
+          break;
       }
   }
+
+  TelemetryPacket packet;
+  if (len == sizeof(packet)) {
+    memcpy(&packet, incomingData, sizeof(packet));
+
+    // -----------------------------------------------------------------
+    // SERVER MODE: Manage Dynamic Registration & Data Matrix Mapping
+    // -----------------------------------------------------------------
+    if (amIServerNode) {
+        // Process registrations FIRST based strictly on packet type, bypassing slot index checks
+        if (packet.packetType == PACKET_REGISTRATION_REQ) {
+            int assignedId = -1;
+
+            // Step A: Check if this transmitter MAC address is already in our table
+            for (int i = 1; i < MAX_SYSTEM_NODES; i++) {
+                if (clientRegistry[i].isActive && memcmp(clientRegistry[i].mac, recv_info->src_addr, 6) == 0) {
+                    assignedId = i;
+                    break;
+                }
+            }
+
+            // Step B: If it's a newly discovered chip, deal out the next available slot
+            if (assignedId == -1) {
+                for (int i = 1; i < MAX_SYSTEM_NODES; i++) {
+                    if (!clientRegistry[i].isActive) {
+                        memcpy(clientRegistry[i].mac, recv_info->src_addr, 6);
+                        clientRegistry[i].isActive = true;
+                        assignedId = i;
+                        break;
+                    }
+                }
+            }
+
+            // Step C: Send the direct confirmation packet back out to the sender's MAC
+            if (assignedId != -1) {
+                TelemetryPacket ackPacket;
+                ackPacket.packetType = PACKET_REGISTRATION_ACK;
+                ackPacket.dynamicNodeId = assignedId;
+                ackPacket.temperature = 0.0f;
+                memcpy(ackPacket.macAddr, recv_info->src_addr, 6);
+                ackPacket.timestamp = millis();
+
+                esp_now_send(recv_info->src_addr, (uint8_t *)&ackPacket, sizeof(ackPacket));
+                Serial.printf("[SERVER] Dynamic handshaking complete -> Assigned Slot %02d\n", assignedId);
+            }
+            return; // Safely exit early from the registration transaction frame
+        }
+        
+        // Handle regular temperature transmission packets
+        if (packet.packetType == PACKET_TELEMETRY && packet.dynamicNodeId < MAX_SYSTEM_NODES) {
+            update_system_matrix(packet.dynamicNodeId, packet.temperature);
+
+            // --- FIXED: ACCUMULATE REMOTE SUB-NODE METRICS INTO HOURLY STATS ---
+            uint8_t id = packet.dynamicNodeId;
+            NodeStats &stats = statisticalMatrix[id];
+            
+            stats.sampleCount++;
+            float delta = packet.temperature - stats.rollingMean;
+            stats.rollingMean += delta / stats.sampleCount;
+            float delta2 = packet.temperature - stats.rollingMean;
+            stats.accumulatedM2 += delta * delta2;
+            // ------------------------------------------------------------------
+
+            // Serial.printf("[SERVER] Intercepted payload from Node %02d -> Temp: %.4f C\n", 
+            //               packet.dynamicNodeId, packet.temperature);
+        }
+    }
+    // -----------------------------------------------------------------
+    // TRANSMITTER MODE: Process Assignment Confirmations
+    // -----------------------------------------------------------------
+    else {
+        if (packet.packetType == PACKET_REGISTRATION_ACK) {
+            uint8_t myMac[6];
+            esp_read_mac(myMac, ESP_MAC_WIFI_STA);
+            
+            // Confirm the incoming server message was targeted to our exact hardware signature
+            if (memcmp(packet.macAddr, myMac, 6) == 0) {
+                myRuntimeNodeId = packet.dynamicNodeId;
+                myRuntimeHostname = "HZ-NODE-0" + String(myRuntimeNodeId);
+                
+                WiFi.setHostname(myRuntimeHostname.c_str());
+                Serial.printf("[TX-SYNC] Handshake locked! Claiming dynamic profile: %s\n", 
+                              myRuntimeHostname.c_str());
+            }
+        }
+    }
+}
 }
 
 void broadcast_telemetry(float currentTemperature) {

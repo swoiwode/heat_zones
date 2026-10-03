@@ -13,8 +13,14 @@
 
 #include "webpage_routes.h"
 
-const char* ssid = "eero_JELP";
-const char* password = "slimjim314";
+// =========================================================================
+// COMPILE-TIME WIFI CREDENTIAL INJECTION
+// Values are securely extracted straight from your platformio.ini variables
+// =========================================================================
+const char* wifi_ssid     = WIFI_SSID;
+const char* wifi_password = WIFI_SECRET_KEY;
+// =========================================================================
+
 
 AsyncWebServer server(80);
 
@@ -130,8 +136,8 @@ void setup() {
     mcu_dir(LittleFS, "/", 3);
 
     // Connect to Wi-Fi
-    Serial.printf("Connecting to %s ", ssid);
-    // WiFi.begin(ssid, password);
+    Serial.printf("Connecting to %s ", wifi_ssid);
+    // WiFi.begin(wifi_ssid, wifi_password);
     // while (WiFi.status() != WL_CONNECTED) {
     //     delay(500);
     //     Serial.print(F("."));
@@ -165,10 +171,10 @@ void setup() {
     }
     Serial.println("[SUCCESS] ESP-NOW Layer bound to radio framework.");
 
-    // 3. Fire up the physical connection to your eero network matrix
-    WiFi.begin(ssid, password);
+    // 3. Fire up the physical connection to the network matrix
+    WiFi.begin(wifi_ssid, wifi_password);
     
-    Serial.print("Synchronizing with eero network matrix");
+    Serial.print("Synchronizing with network matrix");
     unsigned long startAttempt = millis();
     
     // Wait for the router to assign a valid DHCP lease
@@ -179,18 +185,10 @@ void setup() {
 
     // 4. Verify routing status and assign browser tab dynamic configurations
     if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
-        // Match your specific active server target address
-        if (WiFi.localIP() == IPAddress(10, 0, 0, 71)) {
-            amIServerNode = true; 
-            myRuntimeNodeId = 0;
-            myRuntimeHostname = "HZ-SERVER";
-        } else {
-            amIServerNode = false;
-            String macLastFour = WiFi.macAddress().substring(12);
-            macLastFour.replace(":", "");
-            myRuntimeNodeId = -1; 
-            myRuntimeHostname = "HZ-NODE-" + macLastFour;
-        }
+        // =========================================================================
+        // REMOVED INLINE ROLE CONFLICT FILTER
+        // Identity strings are now handled safely at compile time by platformio.ini
+        // =========================================================================
         
         // Push the hostname attributes directly into the active network layer
         WiFi.setHostname(myRuntimeHostname.c_str());
@@ -203,7 +201,7 @@ void setup() {
                 delay(1000);
             }
         }
-        
+
         Serial.printf("\n[SYNC] Node Registered: %s (ID: %d)\n", myRuntimeHostname.c_str(), myRuntimeNodeId);
         Serial.printf("mDNS Active: http://%s.local\n", myRuntimeHostname.c_str());
         Serial.print("Network Route: http://");
@@ -211,6 +209,7 @@ void setup() {
     } else {
         Serial.println("\n[ERROR] Core network matrix timeout. Check SSID credentials.");
     }
+
     // --------------------------------------------------------------------------
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -439,13 +438,22 @@ void loop() {
             if (millis() - lastHourlyFlushTime >= HOURLY_INTERVAL) {
                 lastHourlyFlushTime = millis();
                 
-                Serial.println("\n=================================================================");
+                Serial.println("\n======================================================================================");
                 Serial.println("[STATS LOG] 3600-Second Interval Hit -> Executing Crunch Routine");
-                Serial.println("Timestamp Marker, Node ID, Sample Count, Avg Temp (C), Std Dev (C)");
-                Serial.println("=================================================================");
+                Serial.println("Timestamp Marker, Local Network Name, Node ID, Sample Count, Avg Temp (C), Std Dev (C)");
+                Serial.println("======================================================================================");
 
                 for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
                     NodeStats &stats = statisticalMatrix[i];
+                    
+                    // --- FIXED: DYNAMIC LOCAL HOSTNAME STRING ENGINE ---
+                    char hostname[24];
+                    if (i == 0) {
+                        snprintf(hostname, sizeof(hostname), "HZ-SERVER.local");
+                    } else {
+                        snprintf(hostname, sizeof(hostname), "HZ-NODE-%02d.local", i);
+                    }
+                    // ----------------------------------------------------
                     
                     if (stats.sampleCount > 0) {
                         float calculatedAverage = stats.rollingMean;
@@ -456,10 +464,12 @@ void loop() {
                             calculatedStdDev = sqrt(variance);
                         }
                         
-                        Serial.printf("[HOURLY-METRICS], NODE_%02d, %lu, %.4f, %.4f\n", 
-                                      i, stats.sampleCount, calculatedAverage, calculatedStdDev);
+                        // --- UPDATED PRINT ROUTINE: Injects the clean network hostname token ---
+                        Serial.printf("[HOURLY-METRICS], %-16s, NODE_%02d, %lu, %.4f, %.4f\n", 
+                                      hostname, i, stats.sampleCount, calculatedAverage, calculatedStdDev);
                     } else {
-                        Serial.printf("[HOURLY-METRICS], NODE_%02d, 0, --.----, --.----\n", i);
+                        Serial.printf("[HOURLY-METRICS], %-16s, NODE_%02d, 0, --.----, --.----\n", 
+                                      hostname, i);
                     }
                     
                     // Reset running variables back to zero for the next clean hour block
@@ -467,7 +477,7 @@ void loop() {
                     stats.rollingMean = 0.0f;
                     stats.accumulatedM2 = 0.0f;
                 }
-                Serial.println("=================================================================\n");
+                Serial.println("======================================================================================\n");
             }
         }
         // =========================================================================
