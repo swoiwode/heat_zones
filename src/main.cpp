@@ -437,8 +437,8 @@ void loop() {
         // =========================================================================
         if (amIServerNode) {
             static unsigned long lastHourlyFlushTime = 0;
-            // const unsigned long HOURLY_INTERVAL = 3600000UL;
-            const unsigned long HOURLY_INTERVAL = 60000UL;
+            const unsigned long HOURLY_INTERVAL = 3600000UL;
+            // const unsigned long HOURLY_INTERVAL = 60000UL;
 
             if (millis() - lastHourlyFlushTime >= HOURLY_INTERVAL) {
                 lastHourlyFlushTime = millis();
