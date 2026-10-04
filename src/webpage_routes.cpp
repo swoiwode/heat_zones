@@ -25,33 +25,31 @@ NodeData systemMatrix[MAX_SYSTEM_NODES];
 RegistrationEntry clientRegistry[MAX_SYSTEM_NODES];
 NodeStats statisticalMatrix[MAX_SYSTEM_NODES];
 
-
 void say_hello(void) {
   Serial.printf("Hello, World!\n");
 }
 
 // =========================================================================
-// INITIALIZE GLOBAL MATRIX CSV STRUCTURE DEFINITION ON TARGET SD FILESYSTEM
+// FUNCTION DEFINITION: INITIALIZE OR RESTORE CSV STRUCTURAL LOG
 // =========================================================================
 void initialize_csv_log(const char* filepath) {
-    // Check if the file already exists on the SD Card
+    // 📍 THE SAFE SELF-HEALING FALLBACK LAYER
+    // Checks if the file is missing or has been deleted mid-run
     if (!SD.exists(filepath)) {
-        Serial.printf("[SD-LOG] Creating fresh file: %s\n", filepath);
+        Serial.printf("[SD-GUARD] Target log '%s' missing or wiped! Re-writing baseline headers...\n", filepath);
         
-        // Open the file in WRITE mode to create it
+        // Open with FILE_WRITE to cleanly create the file and drop fresh columns
         File logFile = SD.open(filepath, FILE_WRITE);
         if (logFile) {
-            // Write the structural header line down first
             logFile.println("Date,Time,Local Network Name,Node ID,Sample Count,Success %,Min Temp (C),Max Temp (C),Avg Temp (C),Std Dev (C)");
             logFile.close();
-            Serial.println(F("[SD-LOG] Global CSV column structure written successfully."));
+            Serial.println(F("[SD-GUARD] Column layout recovered successfully."));
         } else {
-            Serial.println(F("[SD-LOG] ERROR: Failed to create base log file on SD Card."));
+            Serial.printf("[SD-GUARD] ERROR: Failed to create recovery baseline at %s\n", filepath);
         }
-    } else {
-        Serial.printf("[SD-LOG] Existing log file found: %s. Staging append operations.\n", filepath);
     }
 }
+
 
 void handle_api_system_temp(AsyncWebServerRequest *request) {
   String jsonPayload = "[";
