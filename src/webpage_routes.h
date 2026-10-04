@@ -42,11 +42,19 @@ struct NodeData {
 };
 extern NodeData systemMatrix[MAX_SYSTEM_NODES];
 
+// =========================================================================
+// PROJECT CORE METRIC STORAGE CONTAINER
+// =========================================================================
 struct NodeStats {
-    uint32_t sampleCount = 0;   
-    float rollingMean = 0.0f;   
-    float accumulatedM2 = 0.0f; 
+    uint32_t sampleCount = 0;     // Tracked packet count
+    float rollingMean    = 0.0f;  // Current hourly average
+    float accumulatedM2  = 0.0f;  // Variance calculation tracker
+
+    // --- NEW: ADD THESE TWO BOUNDING REGISTERS TO CLEAR THE ERROR ---
+    float minTemp        = 999.0f;   // Lower bounding track array
+    float maxTemp        = -999.0f;  // Upper bounding track array
 };
+
 
 extern int global_counter;
 extern const char* counter_file;
@@ -64,6 +72,7 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingD
 void broadcast_telemetry(float currentTemperature);
 void update_system_matrix(uint8_t nodeId, float temp);
 void handle_api_system_temp(AsyncWebServerRequest *request);
+void initialize_csv_log(const char* filepath);
 
 void load_global_counter();
 void save_global_counter();

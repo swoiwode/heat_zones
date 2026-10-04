@@ -396,6 +396,12 @@ void loop() {
             // --- ACCUMULATE SERVER LOCAL METRICS INTO HOURLY STATS ---
             NodeStats &serverStats = statisticalMatrix[0];
             serverStats.sampleCount++;
+
+            // --- FIXED: LATCH LOCAL SERVER EXTREME THERMAL BOUNDS ---
+            if (localTemp < serverStats.minTemp) serverStats.minTemp = localTemp;
+            if (localTemp > serverStats.maxTemp) serverStats.maxTemp = localTemp;
+            // ---------------------------------------------------------
+
             float delta = localTemp - serverStats.rollingMean;
             serverStats.rollingMean += delta / serverStats.sampleCount;
             float delta2 = localTemp - serverStats.rollingMean;
@@ -434,14 +440,28 @@ void loop() {
         if (amIServerNode) {
             static unsigned long lastHourlyFlushTime = 0;
             const unsigned long HOURLY_INTERVAL = 3600000UL;
+            // const unsigned long HOURLY_INTERVAL = 60000UL;
 
             if (millis() - lastHourlyFlushTime >= HOURLY_INTERVAL) {
                 lastHourlyFlushTime = millis();
-                
-                Serial.println("\n======================================================================================");
-                Serial.println("[STATS LOG] 3600-Second Interval Hit -> Executing Crunch Routine");
-                Serial.println("Timestamp Marker, Local Network Name, Node ID, Sample Count, Avg Temp (C), Std Dev (C)");
-                Serial.println("======================================================================================");
+
+                // --- NEW: CAPTURE NETWORK TIME METRICS FROM SYSTEM ---
+                time_t now;
+                struct tm timeinfo;
+                char dateBuffer[12] = "0000-00-00"; // Safeguard defaults
+                char timeBuffer[12] = "00:00:00";
+
+                time(&now);
+                if (localtime_r(&now, &timeinfo)) {
+                    strftime(dateBuffer, sizeof(dateBuffer), "%Y-%m-%d", &timeinfo);
+                    strftime(timeBuffer, sizeof(timeBuffer), "%H:%M:%S", &timeinfo);
+                }
+                // ----------------------------------------------------
+
+                Serial.println("\n================================================================================================================");
+                Serial.println("[STATS LOG] 5-Second Fast-Poll Interval Hit -> Executing Crunch Routine");
+                Serial.println("Date, Time, Local Network Name, Node ID, Sample Count, Success %, Min Temp (C), Max Temp (C), Avg Temp (C), Std Dev (C)");
+                Serial.println("================================================================================================================");
 
                 for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
                     NodeStats &stats = statisticalMatrix[i];
@@ -455,6 +475,11 @@ void loop() {
                     }
                     // ----------------------------------------------------
                     
+                    // --- FIXED: CALIBRATE SUCCESS MATH DENOMINATOR TO 5-SECONDS ---
+                    float successRate = (stats.sampleCount / 5.0f) * 100.0f;
+                    if (successRate > 100.0f) successRate = 100.0f; 
+                    // ----------------------------------------------------
+
                     if (stats.sampleCount > 0) {
                         float calculatedAverage = stats.rollingMean;
                         float calculatedStdDev = 0.0f;
@@ -464,22 +489,25 @@ void loop() {
                             calculatedStdDev = sqrt(variance);
                         }
                         
-                        // --- UPDATED PRINT ROUTINE: Injects the clean network hostname token ---
-                        Serial.printf("[HOURLY-METRICS], %-16s, NODE_%02d, %lu, %.4f, %.4f\n", 
-                                      hostname, i, stats.sampleCount, calculatedAverage, calculatedStdDev);
+                        // --- FIXED: COMPLETE TRUNCATED PRINT SECTIONS ---
+                        Serial.printf("[HOURLY-METRICS], %s, %s, %-17s, NODE_%02d, %5lu, %5.1f%%, %10.2f, %10.2f, %12.4f, %10.4f\n", 
+                                      dateBuffer, timeBuffer, hostname, i, stats.sampleCount, 
+                                      successRate, stats.minTemp, stats.maxTemp, calculatedAverage, calculatedStdDev);
                     } else {
-                        Serial.printf("[HOURLY-METRICS], %-16s, NODE_%02d, 0, --.----, --.----\n", 
-                                      hostname, i);
+                        Serial.printf("[HOURLY-METRICS], %s, %s, %-17s, NODE_%02d,     0,   0.0%%,     --.--,     --.--,      --.----,    --.----\n", 
+                                      dateBuffer, timeBuffer, hostname, i);
                     }
                     
-                    // Reset running variables back to zero for the next clean hour block
+                    // Reset running variables back to zero for the next clean fast block
                     stats.sampleCount = 0;
                     stats.rollingMean = 0.0f;
                     stats.accumulatedM2 = 0.0f;
+                    stats.minTemp = 999.0f;  // Resets high bound marker
+                    stats.maxTemp = -999.0f; // Resets low bound marker
                 }
-                Serial.println("======================================================================================\n");
+                Serial.println("================================================================================================================\n");
             }
         }
-        // =========================================================================
     }
 }
+

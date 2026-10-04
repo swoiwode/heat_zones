@@ -30,6 +30,29 @@ void say_hello(void) {
   Serial.printf("Hello, World!\n");
 }
 
+// =========================================================================
+// INITIALIZE GLOBAL MATRIX CSV STRUCTURE DEFINITION ON TARGET SD FILESYSTEM
+// =========================================================================
+void initialize_csv_log(const char* filepath) {
+    // Check if the file already exists on the SD Card
+    if (!SD.exists(filepath)) {
+        Serial.printf("[SD-LOG] Creating fresh file: %s\n", filepath);
+        
+        // Open the file in WRITE mode to create it
+        File logFile = SD.open(filepath, FILE_WRITE);
+        if (logFile) {
+            // Write the structural header line down first
+            logFile.println("Date,Time,Local Network Name,Node ID,Sample Count,Success %,Min Temp (C),Max Temp (C),Avg Temp (C),Std Dev (C)");
+            logFile.close();
+            Serial.println(F("[SD-LOG] Global CSV column structure written successfully."));
+        } else {
+            Serial.println(F("[SD-LOG] ERROR: Failed to create base log file on SD Card."));
+        }
+    } else {
+        Serial.printf("[SD-LOG] Existing log file found: %s. Staging append operations.\n", filepath);
+    }
+}
+
 void handle_api_system_temp(AsyncWebServerRequest *request) {
   String jsonPayload = "[";
   
@@ -105,7 +128,6 @@ void init_resilient_esp_now() {
 
   WiFi.setHostname(myRuntimeHostname.c_str());
 }
-
 
 void update_system_matrix(uint8_t nodeId, float temp) {
   if (nodeId < MAX_SYSTEM_NODES) {
@@ -191,11 +213,18 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingD
             // --- FIXED: ACCUMULATE REMOTE SUB-NODE METRICS INTO HOURLY STATS ---
             uint8_t id = packet.dynamicNodeId;
             NodeStats &stats = statisticalMatrix[id];
+            float currentVal = packet.temperature;
             
             stats.sampleCount++;
-            float delta = packet.temperature - stats.rollingMean;
+            
+            // --- NEW: LATCH EXTREME THERMAL BOUNDS ---
+            if (currentVal < stats.minTemp) stats.minTemp = currentVal;
+            if (currentVal > stats.maxTemp) stats.maxTemp = currentVal;
+            // -----------------------------------------
+
+            float delta = currentVal - stats.rollingMean;
             stats.rollingMean += delta / stats.sampleCount;
-            float delta2 = packet.temperature - stats.rollingMean;
+            float delta2 = currentVal - stats.rollingMean;
             stats.accumulatedM2 += delta * delta2;
             // ------------------------------------------------------------------
 
@@ -222,7 +251,7 @@ void on_data_recv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingD
             }
         }
     }
-}
+  }
 }
 
 void broadcast_telemetry(float currentTemperature) {
