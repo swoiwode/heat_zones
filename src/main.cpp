@@ -210,8 +210,6 @@ void setup() {
         Serial.println("\n[ERROR] Core network matrix timeout. Check SSID credentials.");
     }
 
-    // --------------------------------------------------------------------------
-
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
         webpage_serve_html(request, LittleFS);
     });
@@ -439,8 +437,8 @@ void loop() {
         // =========================================================================
         if (amIServerNode) {
             static unsigned long lastHourlyFlushTime = 0;
-            const unsigned long HOURLY_INTERVAL = 3600000UL;
-            // const unsigned long HOURLY_INTERVAL = 60000UL;
+            // const unsigned long HOURLY_INTERVAL = 3600000UL;
+            const unsigned long HOURLY_INTERVAL = 60000UL;
 
             if (millis() - lastHourlyFlushTime >= HOURLY_INTERVAL) {
                 lastHourlyFlushTime = millis();
@@ -463,6 +461,19 @@ void loop() {
                 Serial.println("Date, Time, Local Network Name, Node ID, Sample Count, Success %, Min Temp (C), Max Temp (C), Avg Temp (C), Std Dev (C)");
                 Serial.println("================================================================================================================");
 
+                // =========================================================================
+                // 📍 SELF-HEALING STORAGE RECOVERY PIPELINE ACTIVE
+                // =========================================================================
+                // Re-verifies file presence right before writing; heals headers if missing!
+                initialize_csv_log("/telemetry_log.csv");
+
+                // Open the SD card file target for data appending
+                File sdLogFile = SD.open("/telemetry_log.csv", FILE_APPEND);
+                if (!sdLogFile) {
+                    Serial.println(F("[SD-LOG] ERROR: Failed to open telemetry_log.csv for data writing!"));
+                }
+                // =========================================================================
+
                 for (int i = 0; i < MAX_SYSTEM_NODES; i++) {
                     NodeStats &stats = statisticalMatrix[i];
                     
@@ -476,7 +487,7 @@ void loop() {
                     // ----------------------------------------------------
                     
                     // --- FIXED: CALIBRATE SUCCESS MATH DENOMINATOR TO 5-SECONDS ---
-                    float successRate = (stats.sampleCount / 5.0f) * 100.0f;
+                    float successRate = (stats.sampleCount / (HOURLY_INTERVAL / 1000.0f)) * 100.0f;
                     if (successRate > 100.0f) successRate = 100.0f; 
                     // ----------------------------------------------------
 
@@ -489,13 +500,27 @@ void loop() {
                             calculatedStdDev = sqrt(variance);
                         }
                         
-                        // --- FIXED: COMPLETE TRUNCATED PRINT SECTIONS ---
+                        // Prints cleanly to your Serial Terminal Monitor
                         Serial.printf("[HOURLY-METRICS], %s, %s, %-17s, NODE_%02d, %5lu, %5.1f%%, %10.2f, %10.2f, %12.4f, %10.4f\n", 
                                       dateBuffer, timeBuffer, hostname, i, stats.sampleCount, 
                                       successRate, stats.minTemp, stats.maxTemp, calculatedAverage, calculatedStdDev);
+
+                        // 📍 Writes the identical data row row safely to the SD card media
+                        if (sdLogFile) {
+                            sdLogFile.printf("%s,%s,%s,NODE_%02d,%lu,%.1f,%.2f,%.2f,%.4f,%.4f\n", 
+                                            dateBuffer, timeBuffer, hostname, i, stats.sampleCount, 
+                                            successRate, stats.minTemp, stats.maxTemp, calculatedAverage, calculatedStdDev);
+                        }
                     } else {
+                        // Prints empty slot line to Serial Terminal Monitor
                         Serial.printf("[HOURLY-METRICS], %s, %s, %-17s, NODE_%02d,     0,   0.0%%,     --.--,     --.--,      --.----,    --.----\n", 
                                       dateBuffer, timeBuffer, hostname, i);
+
+                        // 📍 Writes the clean empty placeholder row straight to SD card storage
+                        if (sdLogFile) {
+                            sdLogFile.printf("%s,%s,%s,NODE_%02d,0,0.0,--.--,--.--,--.----,--.----\n", 
+                                            dateBuffer, timeBuffer, hostname, i);
+                        }
                     }
                     
                     // Reset running variables back to zero for the next clean fast block
@@ -505,9 +530,19 @@ void loop() {
                     stats.minTemp = 999.0f;  // Resets high bound marker
                     stats.maxTemp = -999.0f; // Resets low bound marker
                 }
+
+                // =========================================================================
+                // 📍 CLOSE FILE HANDLE TO FLUSH ALL BUFFERS SAFELY TO DISK
+                // =========================================================================
+                if (sdLogFile) {
+                    sdLogFile.close();
+                    Serial.println(F("[SD-LOG] Hourly metrics block safely synchronized to SD storage media."));
+                }
+                // =========================================================================
+
                 Serial.println("================================================================================================================\n");
             }
         }
-    }
+     }
 }
 
