@@ -29,20 +29,33 @@ import sys
 import os
 import time
 
-
-def tbd_function(param_str: str) -> None:
-    """
-    What is this for; what does it do; why does it exist?
-
-    :param:
-    :return: None.
-    """
-    logging.debug(f'This is tbd_function, {param_str}')
+import polars
 
 
 def main(filename: str = '') -> None:
-    logging.debug(filename)
-    tbd_function('foo')
+    logging.info(filename)
+    telemetry_df = polars.read_csv(filename).sort("Node ID")
+
+    logging.info(telemetry_df.head())
+    logging.info(telemetry_df.tail())
+
+    target_columns = ["Success %", "Min Temp (C)", "Max Temp (C)", "Avg Temp (C)", "Std Dev (C)"]
+    telemetry_df_mean = telemetry_df.group_by("Node ID").agg([
+        polars.col(col)
+        .cast(polars.Float64, strict=False)
+        .mean()
+        .alias(f"{col} Mean")
+        for col in target_columns
+    ])
+
+    with polars.Config(tbl_rows=-1, tbl_cols=-1, fmt_str_lengths=100):
+        logging.info(
+            telemetry_df_mean
+        )
+    telemetry_df_mean_filtered = telemetry_df_mean.filter(polars.col("Success % Mean") != 0)
+
+    with polars.Config(tbl_rows=-1, tbl_cols=-1, fmt_str_lengths=100):
+        logging.info(f"\n{telemetry_df_mean_filtered=}")
 
 
 if __name__ == '__main__':
@@ -51,19 +64,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=r'Boiler plate code to use as a starting '
                                                  r'point and basic environment checkout.',
                                      formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-ll', '--log_level', default='CRITICAL',
+    parser.add_argument('-ll', '--log_level', default='WARNING',
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                        help='changes level of log output, default is CRITICAL')
+                        help='changes level of log output, default is WARNING')
     parser.add_argument('-if', '--input_file', help='Input csv file name, required.')
 
     # Convert args to a dictionary
     args = vars(parser.parse_args(sys.argv[1:]))
-    m_log_level = args['log_level']
+    log_level = args['log_level']
     m_filename: str = args['input_file']
 
-    logging.basicConfig(level=m_log_level)
-    logging.info(args)
-
+    # Changes global level, not best practice but fast
+    logging.basicConfig(level=log_level)
     main(m_filename)
 
     print(f'{os.path.basename(__file__)} execution: {time.perf_counter() - start_time:,.2f}-seconds')
