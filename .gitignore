@@ -6,3 +6,6 @@
 .vscode/launch.json
 .vscode/ipch
 compile_commands.json
+telemetry/.idea
+telemetry/.vscode
+telemetry/.venv
