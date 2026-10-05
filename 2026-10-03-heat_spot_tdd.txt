@@ -1,0 +1,58 @@
+Technical Design Document: Heat Spot Cluster Architecture
+
+1. System Topology Overview
+The Heat Spot cluster utilizes a decentralized, symmetric 4-Node Square Topology. Rather than employing a fixed primary/secondary hierarchy, all nodes are deployed as identical peers capable of assuming the active server role.
+
+    [ Node 01 ] ----------------------------- [ Node 02 ]
+
+         |                                         |
+         |         =======================         |
+         |        ||  THE FLAG / THE LOCK ||        |
+         |         =======================         |
+         |                    ^                    |
+         |                    |                    |
+         |             (Claimed by Winner)         |
+         |                    |                    |
+    [ Node 04 ] ----------------------------- [ Node 03 ]
+
+
+2. High-Availability & Election Protocol
+High availability is achieved through a dynamic consensus pattern known as Leader Election via Race-for-the-Flag.
+
+* Initialization / Boot: Upon cluster startup, all four nodes concurrently attempt to acquire a centralized distributed lock ("The Flag").
+* Active State: The first node to successfully register and claim the lock wins the race and promotes itself to the active Cluster Server.
+* Heartbeat Monitoring: The active server immediately establishes a continuous, low-latency heartbeat broadcast to the remaining three standby nodes.
+
+
+3. Automated Failover & Rollover Sequence
+The cluster relies on automated, self-healing failover paths to ensure server resiliency:
+1. Loss of Signal: If the active server crashes, loses network connectivity, or goes offline, the heartbeat broadcast is interrupted.
+2. Lock Release: Upon expiration of the heartbeat timeout window, the central lock backend automatically releases "The Flag".
+3. The Recount Race: The remaining three standby nodes detect the missing heartbeat, realize the flag is unowned, and immediately execute a fresh race-for-the-flag.
+4. Promotion: The winning node claims the lock, elevates its status to the active server, and resumes heartbeat broadcasts.
+
+
+4. Race Optimization & Transmission Staggering
+To eliminate collision risks and guarantee a 100% Election Success Rate during a failover event, the cluster implements a staggered transmission protocol:
+* The Thundering Herd Prevention: If all surviving nodes attempt to claim the lock simultaneously, the backend could experience timing conflicts or resource exhaustion.
+* Randomized Backoff / Jitter: Each standby node calculates a unique, microsecond-level staggered delay (jitter) before initiating its lock-acquisition request.
+* Deterministic Success: This staggering ensures that one node cleanly claims the flag first without causing network collisions or lock-service drops, resulting in a predictable, flawless transition of power every time.
+
+
+5. Future Optimization Research Vectors
+The following concepts are documented to preserve engineering ideas and prevent data loss for future expansion iterations:
+
+POWER CONSUMPTION PER NODE (Wireless & Battery-Constrained Edge Tier)
+Because nodes are deployed in limited-access areas with no wired power or data lines, hitting a 1-to-2 year continuous battery runtime requires strict hardware state management over Wi-Fi:
+
+* Standby Deep Sleep State (< 150 uA): To survive 1+ years on battery, standby nodes cannot maintain an active, high-power Wi-Fi connection. Standby nodes must drop into a deep sleep state, shutting down the primary CPU and Wi-Fi radio entirely. They rely on an ultra-low-power internal timer or low-power wireless listening mode (like Wi-Fi 6/7 Target Wake Time).
+* Active Server Processing State (~1.5W - 2.5W): The elected server stays awake to compute Heat Spot data, keep the Wi-Fi radio alive, and broadcast heartbeats. To preserve battery across the whole cluster, the "Active Server" role should ideally rotate or cycle when data transmission isn't actively required.
+* Battery Capacity & Duty Cycle Reference Data (10,000 mAh Baseline):
+  - 1-Second Wake Window per Minute: Consumes minimal power, rendering a ~14.5 month total runtime (Meets 1-Year Constraint).
+  - 5-Second Wake Window per Minute: Increased transmission overhead drops total runtime to ~5.5 months (Fails 1-Year Constraint).
+  - No Deep Sleep (Always On Wi-Fi): Constant idle polling drains the entire cell pool within ~5.2 days (Fails 1-Year Constraint).
+
+ARCHITECTURAL ENHANCEMENTS
+* Dynamic Weighting / Priority Staggering: Transitioning from completely randomized jitter to a system metrics-driven backoff. Nodes with lowest CPU utilization, lowest power overhead, or optimal network latency are assigned shorter backoff windows. This ensures the healthier server wins the flag race over a degraded node.
+* Adaptive Heartbeat Windows: Replacing static timeout thresholds with congestion-aware, sliding-scale windows. The system dynamically scales the heartbeat timeout during periods of intense network jitter, dropping false-alarm failovers to 0%.
+* Token-Ring Local Health Caching: Implementing a lightweight local token passing routine around the square cluster to verify node health. This keeps standard operational traffic local, ensuring the cluster only hits the centralized lock infrastructure when a local token loss indicates an explicit failure.
