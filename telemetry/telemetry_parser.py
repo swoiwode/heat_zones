@@ -30,32 +30,72 @@ import os
 import time
 
 import polars
+import matplotlib.pyplot
 
 
 def main(filename: str = '') -> None:
     logging.info(filename)
-    telemetry_df = polars.read_csv(filename).sort("Node ID")
+    target_columns = ["Node ID", "Success %", "Min Temp (C)", "Max Temp (C)", "Avg Temp (C)", "Std Dev (C)"]
 
-    logging.info(telemetry_df.head())
-    logging.info(telemetry_df.tail())
-
-    target_columns = ["Success %", "Min Temp (C)", "Max Temp (C)", "Avg Temp (C)", "Std Dev (C)"]
-    telemetry_df_mean = telemetry_df.group_by("Node ID").agg([
-        polars.col(col)
-        .cast(polars.Float64, strict=False)
-        .mean()
-        .alias(f"{col} Mean")
-        for col in target_columns
-    ])
+    telemetry_df = (
+        polars.scan_csv(filename)
+        .filter(polars.col("Success %") != 0)
+        .select(target_columns)
+        .sort("Node ID")
+        .collect()
+    )
 
     with polars.Config(tbl_rows=-1, tbl_cols=-1, fmt_str_lengths=100):
         logging.info(
-            telemetry_df_mean
+            telemetry_df
         )
-    telemetry_df_mean_filtered = telemetry_df_mean.filter(polars.col("Success % Mean") != 0)
+    node_id_list = telemetry_df["Node ID"].unique().sort().to_list()
 
-    with polars.Config(tbl_rows=-1, tbl_cols=-1, fmt_str_lengths=100):
-        logging.info(f"\n{telemetry_df_mean_filtered=}")
+    found_fliers = []
+    node_count = []
+    bxp_stats = []
+    for count, node_name in enumerate(node_id_list):
+        node_df = telemetry_df.filter(telemetry_df["Node ID"] == node_name)
+        avg = node_df.select(polars.col("Avg Temp (C)").cast(polars.Float64).mean()).item()
+        std = node_df.select(polars.col("Std Dev (C)").cast(polars.Float64).std()).item()
+        min_avg = node_df.select(polars.col("Min Temp (C)").cast(polars.Float64).mean()).item()
+        max_avg = node_df.select(polars.col("Max Temp (C)").cast(polars.Float64).mean()).item()
+        found_fliers = (
+            node_df.filter(
+                polars.col("Min Temp (C)")
+                .cast(polars.Float64) < min_avg)
+            .get_column("Min Temp (C)")
+            .to_list()
+        )
+        found_fliers = found_fliers + (
+            node_df.filter(
+                polars.col("Max Temp (C)")
+                .cast(polars.Float64) > max_avg)
+            .get_column("Max Temp (C)")
+            .to_list()
+        )
+        stats = {
+            'label': node_name,
+            'med': avg,
+            'q1': avg - std,
+            'q3': avg + std,
+            'whislo': min_avg,
+            'whishi': max_avg,
+            'fliers': []
+        }
+        node_count.append(count + 1)
+        bxp_stats.append(stats)
+        found_fliers = []
+    print(node_count)
+    print(bxp_stats)
+
+    graphfigure, axisleft = matplotlib.pyplot.subplots(figsize=(10, 7.5))
+    axisleft.bxp(bxp_stats, node_count)
+
+    axisleft.set_title('Node Temperature Statistics')
+
+    matplotlib.pyplot.tight_layout()
+    matplotlib.pyplot.show()
 
 
 if __name__ == '__main__':
@@ -67,7 +107,8 @@ if __name__ == '__main__':
     parser.add_argument('-ll', '--log_level', default='WARNING',
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                         help='changes level of log output, default is WARNING')
-    parser.add_argument('-if', '--input_file', help='Input csv file name, required.')
+    parser.add_argument('-if', '--input_file', required=True,
+                        help='Input csv file name, required.')
 
     # Convert args to a dictionary
     args = vars(parser.parse_args(sys.argv[1:]))
