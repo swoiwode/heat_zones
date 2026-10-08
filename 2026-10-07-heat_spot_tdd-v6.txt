@@ -1,0 +1,135 @@
+================================================================================
+TECHNICAL DESIGN DOCUMENT: HEAT SPOT CLUSTER ARCHITECTURE (v6.0)
+================================================================================
+
+1. SYSTEM TOPOLOGY OVERVIEW
+--------------------------------------------------------------------------------
+The Heat Spot cluster utilizes a decentralized, symmetric 4-Node Square Topology 
+(tactically scaled out to a 16-node deployment). All nodes are deployed as 
+identical peers running a unified binary.
+
+    [ Node 01 ] ----------------------------- [ Node 02 ]
+
+         |                                         |
+         |                                         |
+         |                                         |
+         |                                         |
+         |                                         |
+    [ Node 04 ] ----------------------------- [ Node 03 ]
+
+
+2. DYNAMIC HARDWARE INITIALIZATION & AUTO-PROBING (CURRENT CODE MODEL)
+--------------------------------------------------------------------------------
+To simplify deployment across a mixed hardware estate without code adjustments, 
+the cluster binary implements a runtime hardware discovery sequence at boot. 
+The system probes the I2C bus to find which sensor is physically wired, writes 
+a success flag, and fails safely if no hardware responds.
+
+* Address Mapping:
+  - MCP9808 Default I2C Address: 0x18
+  - BME280 Default I2C Address: 0x76
+
+* Execution Pattern:
+  At boot, the initialization sequence checks both sensors. Whichever returns 
+  a 'true' initialization flag is locked in as the active telemetry path for 
+  the lifespan of that execution loop. If both return 'false', the node fails 
+  immediately to protect cluster telemetry integrity.
+
+* C++ Code implementation Reference:
+```cpp
+enum SensorType { NONE, MCP9808, BME280 };
+SensorType detected_sensor = NONE;
+
+bool initialize_hardware_interfaces() {
+    bool mcp_success = init_mcp9808_i2c(); // Probe address 0x18
+    bool bme_success = init_bme280_i2c();  // Probe address 0x76
+
+    if (mcp_success) {
+        detected_sensor = MCP9808;
+        return true;
+    } 
+    else if (bme_success) {
+        detected_sensor = BME280;
+        return true;
+    }
+
+    // Fail if both are false
+    log_critical_error("Hardware Fault: No viable sensor detected on I2C bus.");
+    return false;
+}
+
+double fetch_telemetry_reading() {
+    if (detected_sensor == MCP9808) {
+        return read_mcp9808_temperature();
+    } 
+    else if (detected_sensor == BME280) {
+        // Read strictly the temperature register block from the BME280
+        return read_bme280_temperature();
+    }
+    return -999.9;
+}
+```
+
+
+3. FUTURE OPTIMIZATION RESEARCH VECTORS
+--------------------------------------------------------------------------------
+The following concepts are documented to preserve engineering history, past 
+architectural trials, and ideas for future development iterations:
+
+* Race-for-the-Flag Protocol (Historical Trial Baseline):
+  A dynamic consensus pattern where nodes concurrently attempt to claim a 
+  centralized distributed lock ("The Flag") to elect an active server. Standby 
+  nodes track active server heartbeats; if lost, the flag releases and a new 
+  race occurs. 
+  Note: This approach was marked as a failure in previous testing phases due to 
+  coordination and cluster overhead limitations, but remains documented here 
+  strictly as an archive for future potential optimization or research.
+
+* Power Consumption per Node (Wireless & Battery-Constrained Edge Tier):
+  Because nodes are deployed in limited-access areas with no wired power or data 
+  lines, hitting a 1-to-2 year continuous battery runtime requires strict hardware 
+  state management over Wi-Fi:
+  - Standby Deep Sleep State (< 150 µA): Standby nodes drop into a deep sleep state, 
+    shutting down the primary CPU and Wi-Fi radio entirely via timers.
+  - Active Server Processing State (~1.5W - 2.5W): The active node runs full loads.
+  - Battery Reference Data (10,000 mAh Baseline):
+    * 1-Second Wake Window per Minute: Yields ~14.5 month total runtime (Viable).
+    * 5-Second Wake Window per Minute: Yields ~5.5 months total runtime (Infeasible).
+    * No Deep Sleep (Always On Wi-Fi): Yields ~5.2 days total runtime (Infeasible).
+
+* Dynamic Weighting / Priority Staggering:
+  Transitioning from randomized delays to a metrics-driven backoff based on 
+  node CPU load, power reserves, or network latency.
+
+* Adaptive Heartbeat Windows:
+  Replacing static timeouts with congestion-aware, sliding-scale windows to 
+  eliminate false-alarm cluster states during network jitter.
+
+* Token-Ring Local Health Caching:
+  Passing a lightweight health token sequentially around the square cluster to 
+  keep health monitoring traffic local and drop baseline infrastructure strain.
+
+
+4. PROJECT TO-DO LIST & ACTION ITEMS
+--------------------------------------------------------------------------------
+[─] ACTIVE TODAY: Python & Polars Integration
+    -> Write the script to consume the incoming CSV data file efficiently 
+       within the wireless edge environment constraints.
+
+[ ] TACTICAL MILESTONE: 16-Node Cluster Buildout
+    -> Deploy the existing configuration (4-node square topology with 
+       staggered transmission windows and deep-sleep battery protocols) out 
+       to a full 16-node scale.
+
+[ ] MODULE 1: Split-Brain Mitigation
+    -> Design network partitioning safeguards for the cluster topology.
+
+[ ] MODULE 2: Data Synchronization
+    -> Map out how a node recovering from deep sleep catches up on cluster data.
+
+[ ] MODULE 3: Post-Failover Recovery
+    -> Establish rules for when a dead node comes back online.
+
+================================================================================
+END OF DOCUMENT
+================================================================================
