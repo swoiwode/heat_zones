@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <Adafruit_MCP9808.h>
+#include <Adafruit_BME280.h>
 #include <Adafruit_Sensor.h>
 #include <SPI.h>
 #include <SD.h>
@@ -20,7 +21,6 @@
 const char* wifi_ssid     = WIFI_SSID;
 const char* wifi_password = WIFI_SECRET_KEY;
 // =========================================================================
-
 
 AsyncWebServer server(80);
 
@@ -39,6 +39,7 @@ const char* local_ntp = "10.0.0.1";   // Local gateway/NTP server IP
 struct tm timeinfo;
 char timestamp[64];
 const int output_pin = 23;
+float localTemp;
 
 unsigned long last_update_time = 0;
 int seconds_since_last_save = 0;
@@ -66,6 +67,9 @@ extern NodeStats statisticalMatrix[MAX_SYSTEM_NODES];
 Adafruit_SSD1306 ssd1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 Adafruit_MCP9808 mcp9808 = Adafruit_MCP9808();
+bool mcp9808_initialized = false;
+Adafruit_BME280 bme280 = Adafruit_BME280();
+bool bme280_initialized = false;
 
 void setup() {
     Serial.begin(115200);
@@ -106,20 +110,32 @@ void setup() {
 
     // The default I2C address for MCP9808 is 0x18
     if (!mcp9808.begin(0x18)) {
-      Serial.println("Error: Could not find MCP9808 sensor. Check your wiring!");
-      rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // red
-      for (;;); // Don't proceed, loop forever
+      Serial.println("Could not find MCP9808 sensor.");
+      // rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // red
+      // for (;;); // Don't proceed, loop forever
+    } else {
+        mcp9808_initialized = true;
+        // Wake up the sensor (required if it was previously shut down)
+        mcp9808.wake(); 
+        Serial.println(F("MCP9808 Sensor successfully initialized!"));
     }
-    // Set the resolution mode (Optional)
-    // 0 - 0.5°C, ~30 ms. Fastest reading; lowest resolution. Great for rapid tracking where precision matters less.
-    // 1 - 0.25°C, ~65 ms. Good middle ground for responsiveness.
-    // 2 - 0.125°C, ~130 ms. High resolution.
-    // 3 - 0.0625°C, ~250 ms. Default mode. Maximum possible resolution and precision; slowest conversion time.
-    // mcp9808.setResolution(3); 
   
-    // Wake up the sensor (required if it was previously shut down)
-    mcp9808.wake(); 
-    Serial.println(F(" *** MCP9808 Sensor successfully initialized!"));
+    // Address 0x76 is standard for generic modules; Adafruit modules use 0x77
+    if (!bme280.begin(0x77, &Wire)) {
+        Serial.println(F("Could not find BME280 sensor."));
+        // rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // Red
+        // while (1)
+        //     delay(10);
+    } else {
+        bme280_initialized = true;
+        Serial.println(F("BME280 Sensor successfully initialized!"));
+    }
+
+    if (!mcp9808_initialized && !bme280_initialized) {
+        Serial.println(F(" *** No temperature sensors successfully initialized!"));
+        rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // red
+        for (;;); // Don't proceed, loop forever
+    }
 
     init_sd(SD_CS);
     Serial.printf(" *** SD Card Available Space: %.2f GB\n",
@@ -379,16 +395,24 @@ void loop() {
     if (!amIServerNode && (millis() - lastTxTime >= 2000)) {
         lastTxTime = millis();
         // Automatically fetches and broadcasts your active mcp9808 reading
-        broadcast_telemetry(mcp9808.readTempC());
+        if (mcp9808_initialized) {
+            broadcast_telemetry(mcp9808.readTempC());
+        } else {
+            broadcast_telemetry(bme280.readTemperature());
+        }
     }
 
     // Send a non-blocking background update to all clients every 1 second
     if ((millis() - last_time) > 1000) {
         last_time = millis();
+        if (mcp9808_initialized) {
+            localTemp = mcp9808.readTempC();
+        } else {
+            localTemp = bme280.readTemperature();
+        }
 
         // FIXED: Force the Master Server (Node 00) to populate its own matrix cache line
         if (amIServerNode) {
-            float localTemp = mcp9808.readTempC();
             update_system_matrix(0, localTemp);
 
             // --- ACCUMULATE SERVER LOCAL METRICS INTO HOURLY STATS ---
@@ -417,7 +441,7 @@ void loop() {
 
         snprintf(output_buffer, sizeof(output_buffer),
                  "%.4f°C %s 0x%s %.2f GB",
-                 mcp9808.readTempC(),
+                 localTemp,
                  timestamp,
                  get_unique_id().c_str(),
                  ((double)(SD.totalBytes() - SD.usedBytes()) / 1e9));
@@ -426,7 +450,7 @@ void loop() {
         // OLED Display Logic (Maintained exactly as requested)
         ssd1306.clearDisplay();
         ssd1306.setCursor(0, 16);
-        ssd1306.printf("%.4f", mcp9808.readTempC());
+        ssd1306.printf("%.4f", localTemp);
         ssd1306.display();
 
         // Serial.printf("%s\n", output_buffer);
