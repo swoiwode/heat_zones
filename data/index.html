@@ -90,7 +90,7 @@
         align-items: center;     /* Perfectly centers the text elements inside each column stack */
         min-width: 95px;         /* Keeps data elements from squishing or wrapping onto two lines */
     }
-    
+
     .zone-centered-label {
         font-size: 0.95rem;
         margin-bottom: 2px;      /* Reduced from 4px to pull text closer */
@@ -100,12 +100,12 @@
         display: flex;          /* Forces items into a row */
         align-items: center;    /* Vertically centers the text items */
         gap: 10px;              /* Adds a neat gap between the number and temperature */
-        
+
         /* MOVED HERE: Applies to both the zone number and the temperature */
         font-size: 1rem;
         font-family: monospace;
     }
-    
+
     .zone-centered-temp {
         margin-bottom: 0px;     /* Keeps baseline space reclaimed */
         white-space: nowrap;    /* Prevents the °C from wrapping if columns squeeze */
@@ -135,7 +135,7 @@
     <div style="margin-top: 5px; padding-top: 0px;" class="terminal-box">
       <div style="display: flex; gap: 8px; align-items: stretch; margin-top: 10px;">
         <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
-          <span style="font-size: 14px; font-weight: bold; color: #555;">Click or Drag File to Upload to SD</span>
+          <span style="font-size: 14px; font-weight: bold; color: #555;">Click or Drag File for SD Upload</span>
           <input type="file" id="fileInput" style="display:none" onchange="uploadSDFile()">
         </div>
         <a href="/sd_files" target="_blank" style="padding: 0; background-color: #28a745; color: white; text-decoration: none; font-family: Arial; border-radius: 4px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 14px; width: 73px; text-align: center; font-weight: bold; white-space: nowrap; height: 42px;">
@@ -147,115 +147,115 @@
 
     <!-- Main Telemetry Matrix Grid -->
     <div class="zone-matrix-container">
-      
+
       <!-- REFACTORED: Automatic 4x4 Row/Column Grid Container -->
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; width: 100%; max-width: 900px; margin-left: auto; margin-right: auto;" id="zoneGridMatrix">
-        
+
         <!-- Zone 00 (Server) -->
         <div class="zone-card-box">
           <div class="zone-card-header">00</div>
           <div id="node-temp-0" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 01 -->
         <div class="zone-card-box">
           <div class="zone-card-header">01</div>
           <div id="node-temp-1" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 02 -->
         <div class="zone-card-box">
           <div class="zone-card-header">02</div>
           <div id="node-temp-2" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 03 -->
         <div class="zone-card-box">
           <div class="zone-card-header">03</div>
           <div id="node-temp-3" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 04 -->
         <div class="zone-card-box">
           <div class="zone-card-header">04</div>
           <div id="node-temp-4" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 05 -->
         <div class="zone-card-box">
           <div class="zone-card-header">05</div>
           <div id="node-temp-5" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 06 -->
         <div class="zone-card-box">
           <div class="zone-card-header">06</div>
           <div id="node-temp-6" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 07 -->
         <div class="zone-card-box">
           <div class="zone-card-header">07</div>
           <div id="node-temp-7" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 08 -->
         <div class="zone-card-box">
           <div class="zone-card-header">08</div>
           <div id="node-temp-8" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 09 -->
         <div class="zone-card-box">
           <div class="zone-card-header">09</div>
           <div id="node-temp-9" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 10 -->
         <div class="zone-card-box">
           <div class="zone-card-header">10</div>
           <div id="node-temp-10" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 11 -->
         <div class="zone-card-box">
           <div class="zone-card-header">11</div>
           <div id="node-temp-11" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 12 -->
         <div class="zone-card-box">
           <div class="zone-card-header">12</div>
           <div id="node-temp-12" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 13 -->
         <div class="zone-card-box">
           <div class="zone-card-header">13</div>
           <div id="node-temp-13" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 14 -->
         <div class="zone-card-box">
           <div class="zone-card-header">14</div>
           <div id="node-temp-14" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
+
         <!-- Zone 15 -->
         <div class="zone-card-box">
           <div class="zone-card-header">15</div>
           <div id="node-temp-15" class="zone-centered-temp">--.-- °C</div>
         </div>
-    
-        <!-- 
-          You will append 12 additional card divs here (Zone 04 through Zone 15) 
-          following this exact template to complete your 16 elements. 
+
+        <!--
+          You will append 12 additional card divs here (Zone 04 through Zone 15)
+          following this exact template to complete your 16 elements.
         -->
-    
+
       </div> <!-- /zoneGridMatrix -->
-    
+
     </div>
-    
+
   </div>
   <script>
     // Establish connection to the ESP32 Event Stream

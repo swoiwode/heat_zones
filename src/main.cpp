@@ -72,6 +72,9 @@ Adafruit_BME280 bme280 = Adafruit_BME280();
 bool bme280_initialized = false;
 
 void setup() {
+    // pinMode(RGB_BUILTIN, OUTPUT);
+    rgbLedWrite(RGB_BUILTIN, 8, 4, 0); // Amber
+
     Serial.begin(115200);
     
     // FIXED: Non-blocking boot guard allows standalone operation without a terminal open
@@ -86,8 +89,6 @@ void setup() {
     // Needs some delay to enable initial Serial.printf, 1000 is not enough
     delay(2000);
 
-    // pinMode(RGB_BUILTIN, OUTPUT);
-    rgbLedWrite(RGB_BUILTIN, 8, 4, 0); // Amber
     Wire.begin(I2C_SDA, I2C_SCL);
     SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
 
@@ -323,7 +324,8 @@ void setup() {
     // 3. Now use standard printf to display the string buffer using %s
     Serial.printf("%s\n", formattedTime);
     */
-    rgbLedWrite(RGB_BUILTIN, 0, 8, 0); // Green
+
+    rgbLedWrite(RGB_BUILTIN, 0, 2, 0); // Green
     say_hello();
 }
 
