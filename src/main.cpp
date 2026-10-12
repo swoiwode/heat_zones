@@ -9,8 +9,6 @@
 #include <SPI.h>
 #include <SD.h>
 #include <time.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 
 #include "webpage_routes.h"
 
@@ -20,6 +18,7 @@
 // =========================================================================
 const char* wifi_ssid     = WIFI_SSID;
 const char* wifi_password = WIFI_SECRET_KEY;
+const char* local_ntp     = LOCAL_NTP;   // Local gateway/NTP server IP
 // =========================================================================
 
 AsyncWebServer server(80);
@@ -35,11 +34,10 @@ String shared_input_message = "";
 int colon_pos = 0;
 String input_cmd = "";
 String input_data = "";
-const char* local_ntp = "10.0.0.1";   // Local gateway/NTP server IP
 struct tm timeinfo;
 char timestamp[64];
-const int output_pin = 23;
 float localTemp;
+// const char* local_ntp     = "10.0.0.1";
 
 unsigned long last_update_time = 0;
 int seconds_since_last_save = 0;
@@ -58,13 +56,6 @@ extern NodeStats statisticalMatrix[MAX_SYSTEM_NODES];
 #define SD_SCK 6
 #define SD_MOSI 7
 #define SD_MISO 2
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL)
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3C // See datasheet for Address; 0x3D for some, 0x3C for most
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
-Adafruit_SSD1306 ssd1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 Adafruit_MCP9808 mcp9808 = Adafruit_MCP9808();
 bool mcp9808_initialized = false;
@@ -91,23 +82,6 @@ void setup() {
 
     Wire.begin(I2C_SDA, I2C_SCL);
     SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-
-    pinMode(output_pin, OUTPUT);
-
-    // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-    if (!ssd1306.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-        Serial.println(F("SSD1306 allocation failed"));
-        rgbLedWrite(RGB_BUILTIN, 8, 0, 0); // red
-        for (;;); // Don't proceed, loop forever
-    }
-    Serial.println(F(" *** SSD1306 display successfully initialized!"));
-    ssd1306.clearDisplay();
-    ssd1306.display();
-    ssd1306.setTextSize(3);
-    ssd1306.setTextColor(SSD1306_WHITE);
-    ssd1306.setCursor(0, 16);
-    ssd1306.println(F("MCP9808"));
-    ssd1306.display();
 
     // The default I2C address for MCP9808 is 0x18
     if (!mcp9808.begin(0x18)) {
@@ -330,8 +304,6 @@ void setup() {
 }
 
 void loop() {
-    analogWrite(output_pin, 50);
-
     if (new_value_available) {
         new_value_available = false; // Reset the flag
         shared_input_message.trim(); // Remove any leading/trailing whitespace
@@ -448,12 +420,6 @@ void loop() {
                  get_unique_id().c_str(),
                  ((double)(SD.totalBytes() - SD.usedBytes()) / 1e9));
         events.send(String(output_buffer).c_str(), "output_update", millis());
-
-        // OLED Display Logic (Maintained exactly as requested)
-        ssd1306.clearDisplay();
-        ssd1306.setCursor(0, 16);
-        ssd1306.printf("%.4f", localTemp);
-        ssd1306.display();
 
         // Serial.printf("%s\n", output_buffer);
         global_counter++;
