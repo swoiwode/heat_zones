@@ -37,7 +37,6 @@ String input_data = "";
 struct tm timeinfo;
 char timestamp[64];
 float localTemp;
-// const char* local_ntp     = "10.0.0.1";
 
 unsigned long last_update_time = 0;
 int seconds_since_last_save = 0;
